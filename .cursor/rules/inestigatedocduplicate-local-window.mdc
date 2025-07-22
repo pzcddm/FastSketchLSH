@@ -1,0 +1,9 @@
+---
+alwaysApply: true
+---
+Remember you are using powershell as terminal to run the command, when you exit or close the terminal, enter "exit" instead of "q"
+my development environment on Windows:
+
+- Python 3.11.9
+
+- GCC (MSYS2) 15.1.0
