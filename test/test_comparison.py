@@ -28,12 +28,13 @@ import random
 # Import our sketch implementations
 from src.fast_sketch import FastSimilaritySketch
 from src.kmins_sketch import KMinSketch
+from src.datasketch_sketch import DatasketchMinHashSketch
 from simulation.util import estimate_jaccard, actual_jaccard, generate_interval_sets_with_jaccard
 
 
 class SketchComparison:
     """
-    Compares FastSimilaritySketch and KMinSketch performance across different parameters.
+    Compares FastSimilaritySketch, KMinSketch, and DatasketchMinHashSketch performance across different parameters.
     """
     
     def __init__(self):
@@ -82,8 +83,10 @@ class SketchComparison:
         # Initialize results for this test
         fast_errors = []
         kmins_errors = []
+        datasketch_errors = []
         fast_times = []
         kmins_times = []
+        datasketch_times = []
             
         for trial in range(num_trials):
             # Generate test sets with 50% overlap, unique per trial
@@ -118,17 +121,35 @@ class SketchComparison:
             kmins_estimated = estimate_jaccard(sketch_a, sketch_b)
             kmins_error = abs(true_jaccard - kmins_estimated)
             
+            # Test DatasketchMinHashSketch
+            datasketch_sketcher = DatasketchMinHashSketch(num_perm=k)
+            
+            # Time sketch generation for set A and B
+            time_a = self.time_sketch_generation(datasketch_sketcher, set_a)
+            time_b = self.time_sketch_generation(datasketch_sketcher, set_b)
+            datasketch_total_time = time_a + time_b
+            
+            # Get sketches and estimate
+            sketch_a = datasketch_sketcher.sketch(set_a)
+            sketch_b = datasketch_sketcher.sketch(set_b)
+            datasketch_estimated = estimate_jaccard(sketch_a, sketch_b)
+            datasketch_error = abs(true_jaccard - datasketch_estimated)
+            
             # Collect results
             fast_errors.append(fast_error)
             kmins_errors.append(kmins_error)
+            datasketch_errors.append(datasketch_error)
             fast_times.append(fast_total_time)
             kmins_times.append(kmins_total_time)
+            datasketch_times.append(datasketch_total_time)
         
         # Calculate averages
         avg_fast_error = sum(fast_errors) / len(fast_errors)
         avg_kmins_error = sum(kmins_errors) / len(kmins_errors)
+        avg_datasketch_error = sum(datasketch_errors) / len(datasketch_errors)
         avg_fast_time = sum(fast_times) / len(fast_times)
         avg_kmins_time = sum(kmins_times) / len(kmins_times)
+        avg_datasketch_time = sum(datasketch_times) / len(datasketch_times)
         
         return {
             'k': k,
@@ -136,9 +157,12 @@ class SketchComparison:
             'true_jaccard': true_jaccard,
             'fast_avg_error': avg_fast_error,
             'kmins_avg_error': avg_kmins_error,
+            'datasketch_avg_error': avg_datasketch_error,
             'fast_avg_time': avg_fast_time,
             'kmins_avg_time': avg_kmins_time,
-            'speedup_ratio': avg_fast_time / avg_kmins_time if avg_kmins_time > 0 else 0
+            'datasketch_avg_time': avg_datasketch_time,
+            'fast_speedup_vs_kmins': avg_fast_time / avg_kmins_time if avg_kmins_time > 0 else 0,
+            'fast_speedup_vs_datasketch': avg_fast_time / avg_datasketch_time if avg_datasketch_time > 0 else 0
         }
     
     def run_full_comparison(self) -> None:
@@ -163,9 +187,12 @@ class SketchComparison:
                 
                 print(f"  Fast error: {result['fast_avg_error']:.6f}")
                 print(f"  KMins error: {result['kmins_avg_error']:.6f}")
+                print(f"  Datasketch error: {result['datasketch_avg_error']:.6f}")
                 print(f"  Fast time: {result['fast_avg_time']:.6f}s")
                 print(f"  KMins time: {result['kmins_avg_time']:.6f}s")
-                print(f"  Speedup ratio: {result['speedup_ratio']:.2f}")
+                print(f"  Datasketch time: {result['datasketch_avg_time']:.6f}s")
+                print(f"  Speedup ratio (Fast/KMins): {result['fast_speedup_vs_kmins']:.2f}")
+                print(f"  Speedup ratio (Fast/Datasketch): {result['fast_speedup_vs_datasketch']:.2f}")
                 print()
     
     def save_results_to_csv(self, filename: str = "sketch_comparison_results.csv") -> None:
@@ -178,9 +205,9 @@ class SketchComparison:
         filepath = os.path.join(os.getcwd(), 'records', filename)
         fieldnames = [
             'k', 'n', 'true_jaccard',
-            'fast_avg_error', 'kmins_avg_error',
-            'fast_avg_time', 'kmins_avg_time',
-            'speedup_ratio'
+            'fast_avg_error', 'kmins_avg_error', 'datasketch_avg_error',
+            'fast_avg_time', 'kmins_avg_time', 'datasketch_avg_time',
+            'fast_speedup_vs_kmins', 'fast_speedup_vs_datasketch'
         ]
         with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
