@@ -17,7 +17,7 @@ def _permute_hash(h: int, a: int, b: int) -> np.uint32:
     return np.uint32(((a * h + b) % (2**64)) >> 32)
 
 
-class RminHashSketch:
+class RMinHashSketch:
     def __init__(self, num_perm: int = 128, random_seed: int = 42):
         self.num_perm = num_perm
         self.random_seed = random_seed
