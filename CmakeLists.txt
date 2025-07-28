@@ -1,0 +1,20 @@
+cmake_minimum_required(VERSION 3.12)
+project(FastSketchLSH LANGUAGES CXX)
+
+# 设置编译选项
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native")
+
+# 查找PyBind11
+find_package(pybind11 REQUIRED)
+
+# 添加库目标
+add_library(cmins_sketch
+    cpp/cminhash.cpp
+    cpp/murmurhash3.cpp
+)
+target_include_directories(cmins_sketch PUBLIC include)
+
+# Python模块
+pybind11_add_module(FastSketchLSH cpp/init.cpp)
+target_link_libraries(FastSketchLSH PRIVATE cmins_sketch)
