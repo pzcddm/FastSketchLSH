@@ -8,9 +8,9 @@ class CMinHashSketch:
         self.num_perm = num_perm
         self.seed = seed
         rng = np.random.RandomState(seed)
-        self.sigma_a = rng.randint(1, 2 ** 64, dtype=np.uint64) | 1
+        self.sigma_a = rng.randint(1, 2 ** 64, dtype=np.uint64) | np.uint64(1)
         self.sigma_b = rng.randint(0, 2 ** 64, dtype=np.uint64)
-        self.pi_c = rng.randint(1, 2 ** 64, dtype=np.uint64) | 1
+        self.pi_c = rng.randint(1, 2 ** 64, dtype=np.uint64) | np.uint64(1)
         self.pi_d = rng.randint(0, 2 ** 64, dtype=np.uint64)
         # π_c * k + π_d (k ∈ 0..num_perm-1)
         k_values = np.arange(num_perm, dtype=np.uint64)

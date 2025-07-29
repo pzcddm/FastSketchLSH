@@ -1,20 +1,22 @@
 '''
-Comparison Test: FastSimilaritySketch vs KMinSketch
+Comparison Test: FastSimilaritySketch vs KMinSketch vs DatasketchMinHashSketch vs CMinHashSketch
 
-This file compares the performance of FastSimilaritySketch and KMinSketch algorithms
-in terms of estimation accuracy and execution speed across varying parameters.
+This file compares the performance of FastSimilaritySketch, KMinSketch, DatasketchMinHashSketch, 
+and CMinHashSketch algorithms in terms of estimation accuracy and execution speed across varying parameters.
 
 The test varies:
-- k values: [16, 32, 64, 128, 256, 512, 1024]
-- Set sizes (n): [100, 1000, 10000, 100000]
+- k values: [16, 32, 64, 128, 256, 512]
+- Set sizes (n): [100, 1250, 2500, 5000, 10000, 20000]
 
 Results are saved to CSV files in the records/ directory for analysis.
 
 Time Complexity:
 - FastSimilaritySketch: O(2k * n) 
 - KMinSketch: O(k * n)
+- DatasketchMinHashSketch: O(k * n)
+- CMinHashSketch: O(k * n)
 
-Space Complexity: Both O(k)
+Space Complexity: All O(k)
 '''
 
 import time
@@ -29,12 +31,13 @@ import random
 from src.fast_sketch import FastSimilaritySketch
 from src.kmins_sketch import KMinSketch
 from src.datasketch_sketch import DatasketchMinHashSketch
+from src.cmins_sketch import CMinHashSketch
 from simulation.util import estimate_jaccard, actual_jaccard, generate_interval_sets_with_jaccard
 
 
 class SketchComparison:
     """
-    Compares FastSimilaritySketch, KMinSketch, and DatasketchMinHashSketch performance across different parameters.
+    Compares FastSimilaritySketch, KMinSketch, DatasketchMinHashSketch, and CMinHashSketch performance across different parameters.
     """
     
     def __init__(self):
@@ -84,9 +87,11 @@ class SketchComparison:
         fast_errors = []
         kmins_errors = []
         datasketch_errors = []
+        cmins_errors = []
         fast_times = []
         kmins_times = []
         datasketch_times = []
+        cmins_times = []
             
         for trial in range(num_trials):
             # Generate test sets with 50% overlap, unique per trial
@@ -135,21 +140,39 @@ class SketchComparison:
             datasketch_estimated = estimate_jaccard(sketch_a, sketch_b)
             datasketch_error = abs(true_jaccard - datasketch_estimated)
             
+            # Test CMinHashSketch
+            cmins_sketcher = CMinHashSketch(num_perm=k)
+            
+            # Time sketch generation for set A and B
+            time_a = self.time_sketch_generation(cmins_sketcher, set_a)
+            time_b = self.time_sketch_generation(cmins_sketcher, set_b)
+            cmins_total_time = time_a + time_b
+            
+            # Get sketches and estimate
+            sketch_a = cmins_sketcher.sketch(set_a)
+            sketch_b = cmins_sketcher.sketch(set_b)
+            cmins_estimated = estimate_jaccard(sketch_a, sketch_b)
+            cmins_error = abs(true_jaccard - cmins_estimated)
+            
             # Collect results
             fast_errors.append(fast_error)
             kmins_errors.append(kmins_error)
             datasketch_errors.append(datasketch_error)
+            cmins_errors.append(cmins_error)
             fast_times.append(fast_total_time)
             kmins_times.append(kmins_total_time)
             datasketch_times.append(datasketch_total_time)
+            cmins_times.append(cmins_total_time)
         
         # Calculate averages
         avg_fast_error = sum(fast_errors) / len(fast_errors)
         avg_kmins_error = sum(kmins_errors) / len(kmins_errors)
         avg_datasketch_error = sum(datasketch_errors) / len(datasketch_errors)
+        avg_cmins_error = sum(cmins_errors) / len(cmins_errors)
         avg_fast_time = sum(fast_times) / len(fast_times)
         avg_kmins_time = sum(kmins_times) / len(kmins_times)
         avg_datasketch_time = sum(datasketch_times) / len(datasketch_times)
+        avg_cmins_time = sum(cmins_times) / len(cmins_times)
         
         return {
             'k': k,
@@ -158,18 +181,23 @@ class SketchComparison:
             'fast_avg_error': avg_fast_error,
             'kmins_avg_error': avg_kmins_error,
             'datasketch_avg_error': avg_datasketch_error,
+            'cmins_avg_error': avg_cmins_error,
             'fast_avg_time': avg_fast_time,
             'kmins_avg_time': avg_kmins_time,
             'datasketch_avg_time': avg_datasketch_time,
+            'cmins_avg_time': avg_cmins_time,
             'fast_speedup_vs_kmins': avg_fast_time / avg_kmins_time if avg_kmins_time > 0 else 0,
-            'fast_speedup_vs_datasketch': avg_fast_time / avg_datasketch_time if avg_datasketch_time > 0 else 0
+            'fast_speedup_vs_datasketch': avg_fast_time / avg_datasketch_time if avg_datasketch_time > 0 else 0,
+            'fast_speedup_vs_cmins': avg_fast_time / avg_cmins_time if avg_cmins_time > 0 else 0,
+            'kmins_speedup_vs_cmins': avg_kmins_time / avg_cmins_time if avg_cmins_time > 0 else 0,
+            'datasketch_speedup_vs_cmins': avg_datasketch_time / avg_cmins_time if avg_cmins_time > 0 else 0
         }
     
     def run_full_comparison(self) -> None:
         """
         Run the complete comparison across all parameter combinations.
         """
-        print("Starting comprehensive comparison of FastSimilaritySketch vs KMinSketch")
+        print("Starting comprehensive comparison of FastSimilaritySketch vs KMinSketch vs DatasketchMinHashSketch vs CMinHashSketch")
         print(f"Testing k values: {self.k_values}")
         print(f"Testing n values: {self.n_values}")
         print()
@@ -188,14 +216,19 @@ class SketchComparison:
                 print(f"  Fast error: {result['fast_avg_error']:.6f}")
                 print(f"  KMins error: {result['kmins_avg_error']:.6f}")
                 print(f"  Datasketch error: {result['datasketch_avg_error']:.6f}")
+                print(f"  CMins error: {result['cmins_avg_error']:.6f}")
                 print(f"  Fast time: {result['fast_avg_time']:.6f}s")
                 print(f"  KMins time: {result['kmins_avg_time']:.6f}s")
                 print(f"  Datasketch time: {result['datasketch_avg_time']:.6f}s")
+                print(f"  CMins time: {result['cmins_avg_time']:.6f}s")
                 print(f"  Speedup ratio (Fast/KMins): {result['fast_speedup_vs_kmins']:.2f}")
                 print(f"  Speedup ratio (Fast/Datasketch): {result['fast_speedup_vs_datasketch']:.2f}")
+                print(f"  Speedup ratio (Fast/CMins): {result['fast_speedup_vs_cmins']:.2f}")
+                print(f"  Speedup ratio (KMins/CMins): {result['kmins_speedup_vs_cmins']:.2f}")
+                print(f"  Speedup ratio (Datasketch/CMins): {result['datasketch_speedup_vs_cmins']:.2f}")
                 print()
     
-    def save_results_to_csv(self, filename: str = "sketch_comparison_results.csv") -> None:
+    def save_results_to_csv(self, filename: str = "sketch_comparison_results_with_cmins.csv") -> None:
         """
         Save comparison results to a CSV file in the records directory.
         Args:
@@ -205,9 +238,10 @@ class SketchComparison:
         filepath = os.path.join(os.getcwd(), 'records', filename)
         fieldnames = [
             'k', 'n', 'true_jaccard',
-            'fast_avg_error', 'kmins_avg_error', 'datasketch_avg_error',
-            'fast_avg_time', 'kmins_avg_time', 'datasketch_avg_time',
-            'fast_speedup_vs_kmins', 'fast_speedup_vs_datasketch'
+            'fast_avg_error', 'kmins_avg_error', 'datasketch_avg_error', 'cmins_avg_error',
+            'fast_avg_time', 'kmins_avg_time', 'datasketch_avg_time', 'cmins_avg_time',
+            'fast_speedup_vs_kmins', 'fast_speedup_vs_datasketch', 'fast_speedup_vs_cmins',
+            'kmins_speedup_vs_cmins', 'datasketch_speedup_vs_cmins'
         ]
         with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
