@@ -11,7 +11,7 @@ The test varies:
 Results are saved to CSV files in the records/ directory for analysis.
 
 Time Complexity:
-- FastSimilaritySketch: O(2k * n) 
+- FastSimilaritySketch: O(n + k log k) (expectation)
 - KMinSketch: O(k * n)
 - DatasketchMinHashSketch: O(k * n)
 - CMinHashSketch: O(k * n)
