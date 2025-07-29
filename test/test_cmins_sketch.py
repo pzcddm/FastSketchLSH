@@ -15,12 +15,10 @@ if __name__ == '__main__':
     true_j = actual_jaccard(A, B)
     print(f"True Jaccard: {true_j:.4f}")
 
-    A_list = [str(x) for x in A]
-    B_list = [str(x) for x in B]
     sketcher = CMinHashSketch()
     print("Generating sketches...")
-    S_A = sketcher.sketch(A_list)
-    S_B = sketcher.sketch(B_list)
+    S_A = sketcher.sketch(A)
+    S_B = sketcher.sketch(B)
     print("Done.")
 
     est_j = estimate_jaccard(S_A, S_B)

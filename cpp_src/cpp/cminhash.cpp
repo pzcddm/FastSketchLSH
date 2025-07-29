@@ -19,13 +19,13 @@ CMinHashSketch::CMinHashSketch (size_t num_perm, uint32_t seed)
   }
 }
 
-std::vector<uint32_t> CMinHashSketch::sketch(const std::vector<std::string>& items) {
+std::vector<uint32_t> CMinHashSketch::sketch(const std::vector<int>& items) {
     std::fill(hash_values.begin(), hash_values.end(), std::numeric_limits<uint64_t>::max());
     
-    for (const auto& item : items) {
+    for (const auto item : items) {
         // use MurmurHash3_x64_128 to compute hash value
         uint64_t h[2];
-        MurmurHash3_x64_128(item.data(), item.size(), seed, h);
+        MurmurHash3_x64_128(&item, sizeof(int), seed, h);
         
         // compute σ(h) = a*h + b
         uint64_t sigma_h = sigma_a * h[0] + sigma_b;

@@ -14,5 +14,5 @@ private:
   std::vector<uint64_t> hash_values;
 public:
   CMinHashSketch(size_t num_perm = 128, uint32_t seed = 42);
-  std::vector<uint32_t> sketch(const std::vector<std::string>& items);
+  std::vector<uint32_t> sketch(const std::vector<int>& items);
 };
