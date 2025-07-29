@@ -6,6 +6,7 @@ ext_module = Extension(
     'FastSketchLSH',
     sources=[
         'cpp/cminhash.cpp',
+        "cpp/kminhash.cpp",
         'cpp/murmurhash3.cpp',
         'cpp/init.cpp'
     ],

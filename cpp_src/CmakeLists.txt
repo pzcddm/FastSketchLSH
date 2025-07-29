@@ -9,12 +9,13 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native")
 find_package(pybind11 REQUIRED)
 
 # 添加库目标
-add_library(cmins_sketch
+add_library(FastSketchLSH
     cpp/cminhash.cpp
+    cpp/kminhash.cpp
     cpp/murmurhash3.cpp
 )
-target_include_directories(cmins_sketch PUBLIC include)
+target_include_directories(FastSketchLSH PUBLIC include)
 
 # Python模块
 pybind11_add_module(FastSketchLSH cpp/init.cpp)
-target_link_libraries(FastSketchLSH PRIVATE cmins_sketch)
+target_link_libraries(FastSketchLSH PRIVATE FastSketchLSH)

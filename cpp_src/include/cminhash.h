@@ -2,6 +2,10 @@
 #include <vector>
 #include <string>
 #include <cstdint>
+#include <limits>
+#include <random>
+#include <algorithm>
+#include "murmurhash.h"
 
 class CMinHashSketch
 {
