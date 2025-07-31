@@ -17,7 +17,7 @@ class FastSimilaritySketch:
     Implementation of Algorithm 1 from "Fast Similarity Sketching" paper (1704.04370v4).
     Modified to use fixed random seeds for reproducibility.
     
-    Time Complexity: O(t * |A|) where t is sketch size and |A| is set size
+    Time Complexity: O(|A| + tlogt) where t is sketch size and |A| is set size
     Space Complexity: O(t)
     """
     def __init__(self, sketch_size: int, random_seed: int = 42):
@@ -39,6 +39,9 @@ class FastSimilaritySketch:
             current_seed = int(seed_np)
 
             for a in A:
+                # We encode a here since there will be 2t*|A| calls to mmh3
+                # However, actually at most time, because we only enumerate one round
+                # To have a better space locality, we encode a here
                 element_str = str(a).encode('utf-8')
                 hash_val = mmh3.hash64(element_str, seed=current_seed, signed=False)[0]
                 
