@@ -23,28 +23,33 @@ import time
 import csv
 import os
 import sys
+import numpy as np
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from typing import List, Tuple
-import random
 
 # Import our sketch implementations
 from src.fast_sketch import FastSimilaritySketch
-from src.kmins_sketch import KMinSketch
+# from src.kmins_sketch import KMinSketch
 from src.datasketch_sketch import DatasketchMinHashSketch
-from src.cmins_sketch import CMinHashSketch
+# from src.cmins_sketch import CMinHashSketch
 from simulation.util import estimate_jaccard, actual_jaccard, generate_interval_sets_with_jaccard
+
+from FastSketchLSH import CMinSketch
+from FastSketchLSH import KMinSketch
+from FastSketchLSH import RMinSketch
 
 
 class SketchComparison:
     """
     Compares FastSimilaritySketch, KMinSketch, DatasketchMinHashSketch, and CMinHashSketch performance across different parameters.
     """
-    
+
     def __init__(self):
         self.k_values = [16, 32, 64, 128, 256, 512]
         self.n_values = [100, 1250, 2500, 5000, 10000, 20000]
         self.results = []
-        
+
     def generate_test_sets(self, n: int, overlap_ratio: float = 0.5, trial: int = 0) -> Tuple[set, set]:
         """
         Generate two test sets with controlled overlap using util.py.
@@ -52,7 +57,7 @@ class SketchComparison:
         """
         set_a, set_b, _ = generate_interval_sets_with_jaccard(overlap_ratio, n, start_id=trial * n)
         return set_a, set_b
-    
+
     def time_sketch_generation(self, sketcher, test_set: set) -> float:
         """
         Measure time to generate a sketch for a given set.
@@ -68,7 +73,7 @@ class SketchComparison:
         sketch = sketcher.sketch(test_set)
         end_time = time.perf_counter()
         return end_time - start_time
-    
+
     def run_single_test(self, k: int, n: int, num_trials: int = 50) -> dict:
         """
         Run a single comparison test for given k and n values.
@@ -82,98 +87,119 @@ class SketchComparison:
             Dictionary containing test results
         """
         print(f"Testing k={k}, n={n}")
-        
+
         # Initialize results for this test
         fast_errors = []
         kmins_errors = []
         datasketch_errors = []
         cmins_errors = []
+        rmins_errors = []
         fast_times = []
         kmins_times = []
         datasketch_times = []
         cmins_times = []
-            
+        rmins_times = []
+
         for trial in range(num_trials):
             # Generate test sets with 50% overlap, unique per trial
             set_a, set_b = self.generate_test_sets(n, overlap_ratio=0.5, trial=trial)
             true_jaccard = actual_jaccard(set_a, set_b)
-            
+
             # Test FastSimilaritySketch
             fast_sketcher = FastSimilaritySketch(sketch_size=k)
-            
+
             # Time sketch generation for set A and B
             time_a = self.time_sketch_generation(fast_sketcher, set_a)
             time_b = self.time_sketch_generation(fast_sketcher, set_b)
             fast_total_time = time_a + time_b
-            
+
             # Get sketches and estimate
             sketch_a = fast_sketcher.sketch(set_a)
             sketch_b = fast_sketcher.sketch(set_b)
             fast_estimated = estimate_jaccard(sketch_a, sketch_b)
             fast_error = abs(true_jaccard - fast_estimated)
-            
+
             # Test KMinSketch
             kmins_sketcher = KMinSketch(k=k)
-            
+
             # Time sketch generation for set A and B
             time_a = self.time_sketch_generation(kmins_sketcher, set_a)
             time_b = self.time_sketch_generation(kmins_sketcher, set_b)
             kmins_total_time = time_a + time_b
-            
+
             # Get sketches and estimate
             sketch_a = kmins_sketcher.sketch(set_a)
             sketch_b = kmins_sketcher.sketch(set_b)
             kmins_estimated = estimate_jaccard(sketch_a, sketch_b)
             kmins_error = abs(true_jaccard - kmins_estimated)
-            
+
             # Test DatasketchMinHashSketch
             datasketch_sketcher = DatasketchMinHashSketch(num_perm=k)
-            
+
             # Time sketch generation for set A and B
             time_a = self.time_sketch_generation(datasketch_sketcher, set_a)
             time_b = self.time_sketch_generation(datasketch_sketcher, set_b)
             datasketch_total_time = time_a + time_b
-            
+
             # Get sketches and estimate
             sketch_a = datasketch_sketcher.sketch(set_a)
             sketch_b = datasketch_sketcher.sketch(set_b)
             datasketch_estimated = estimate_jaccard(sketch_a, sketch_b)
             datasketch_error = abs(true_jaccard - datasketch_estimated)
-            
+
             # Test CMinHashSketch
-            cmins_sketcher = CMinHashSketch(num_perm=k)
-            
+            cmins_sketcher = CMinSketch(num_perm=k)
+
             # Time sketch generation for set A and B
             time_a = self.time_sketch_generation(cmins_sketcher, set_a)
             time_b = self.time_sketch_generation(cmins_sketcher, set_b)
             cmins_total_time = time_a + time_b
-            
+
             # Get sketches and estimate
             sketch_a = cmins_sketcher.sketch(set_a)
             sketch_b = cmins_sketcher.sketch(set_b)
             cmins_estimated = estimate_jaccard(sketch_a, sketch_b)
             cmins_error = abs(true_jaccard - cmins_estimated)
-            
+
+            # Test RMinHashSketch
+            rmins_sketcher = RMinSketch(num_perm=k)
+
+            # Time sketch generation for set A and B
+            time_a = self.time_sketch_generation(rmins_sketcher, set_a)
+            time_b = self.time_sketch_generation(rmins_sketcher, set_b)
+            rmins_total_time = time_a + time_b
+
+            # Get sketches and estimate
+            sketch_a = rmins_sketcher.sketch(set_a)
+            sketch_b = rmins_sketcher.sketch(set_b)
+            rmins_estimated = estimate_jaccard(sketch_a, sketch_b)
+            rmins_error = abs(true_jaccard - rmins_estimated)
+
             # Collect results
             fast_errors.append(fast_error)
             kmins_errors.append(kmins_error)
             datasketch_errors.append(datasketch_error)
             cmins_errors.append(cmins_error)
+            rmins_errors.append(rmins_error)
+
             fast_times.append(fast_total_time)
             kmins_times.append(kmins_total_time)
             datasketch_times.append(datasketch_total_time)
             cmins_times.append(cmins_total_time)
-        
+            rmins_times.append(rmins_total_time)
+
         # Calculate averages
         avg_fast_error = sum(fast_errors) / len(fast_errors)
         avg_kmins_error = sum(kmins_errors) / len(kmins_errors)
         avg_datasketch_error = sum(datasketch_errors) / len(datasketch_errors)
         avg_cmins_error = sum(cmins_errors) / len(cmins_errors)
+        avg_rmins_error = sum(rmins_errors) / len(rmins_errors)
         avg_fast_time = sum(fast_times) / len(fast_times)
         avg_kmins_time = sum(kmins_times) / len(kmins_times)
         avg_datasketch_time = sum(datasketch_times) / len(datasketch_times)
         avg_cmins_time = sum(cmins_times) / len(cmins_times)
-        
+        avg_rmins_time = sum(rmins_times) / len(rmins_times)
+
         return {
             'k': k,
             'n': n,
@@ -182,37 +208,40 @@ class SketchComparison:
             'kmins_avg_error': avg_kmins_error,
             'datasketch_avg_error': avg_datasketch_error,
             'cmins_avg_error': avg_cmins_error,
+            'rmins_avg_error': avg_rmins_error,
             'fast_avg_time': avg_fast_time,
             'kmins_avg_time': avg_kmins_time,
             'datasketch_avg_time': avg_datasketch_time,
             'cmins_avg_time': avg_cmins_time,
+            'rmins_avg_time': avg_rmins_time,
             'fast_speedup_vs_kmins': avg_fast_time / avg_kmins_time if avg_kmins_time > 0 else 0,
             'fast_speedup_vs_datasketch': avg_fast_time / avg_datasketch_time if avg_datasketch_time > 0 else 0,
             'fast_speedup_vs_cmins': avg_fast_time / avg_cmins_time if avg_cmins_time > 0 else 0,
             'kmins_speedup_vs_cmins': avg_kmins_time / avg_cmins_time if avg_cmins_time > 0 else 0,
             'datasketch_speedup_vs_cmins': avg_datasketch_time / avg_cmins_time if avg_cmins_time > 0 else 0
         }
-    
+
     def run_full_comparison(self) -> None:
         """
         Run the complete comparison across all parameter combinations.
         """
-        print("Starting comprehensive comparison of FastSimilaritySketch vs KMinSketch vs DatasketchMinHashSketch vs CMinHashSketch")
+        print(
+            "Starting comprehensive comparison of FastSimilaritySketch vs KMinSketch vs DatasketchMinHashSketch vs CMinHashSketch")
         print(f"Testing k values: {self.k_values}")
         print(f"Testing n values: {self.n_values}")
         print()
-        
+
         total_tests = len(self.k_values) * len(self.n_values)
         current_test = 0
-        
+
         for k in self.k_values:
             for n in self.n_values:
                 current_test += 1
                 print(f"Progress: {current_test}/{total_tests}")
-                
+
                 result = self.run_single_test(k, n)
                 self.results.append(result)
-                
+
                 print(f"  Fast error: {result['fast_avg_error']:.6f}")
                 print(f"  KMins error: {result['kmins_avg_error']:.6f}")
                 print(f"  Datasketch error: {result['datasketch_avg_error']:.6f}")
@@ -227,7 +256,7 @@ class SketchComparison:
                 print(f"  Speedup ratio (KMins/CMins): {result['kmins_speedup_vs_cmins']:.2f}")
                 print(f"  Speedup ratio (Datasketch/CMins): {result['datasketch_speedup_vs_cmins']:.2f}")
                 print()
-    
+
     def save_results_to_csv(self, filename: str = "sketch_comparison_results_with_cmins.csv") -> None:
         """
         Save comparison results to a CSV file in the records directory.
@@ -255,6 +284,6 @@ if __name__ == '__main__':
     comparison = SketchComparison()
     comparison.run_full_comparison()
     comparison.save_results_to_csv()
-    
+
     print("Comparison complete!")
-    print(f"Total tests run: {len(comparison.results)}") 
+    print(f"Total tests run: {len(comparison.results)}")

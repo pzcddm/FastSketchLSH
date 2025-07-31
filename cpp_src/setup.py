@@ -7,6 +7,7 @@ ext_module = Extension(
     sources=[
         'cpp/cminhash.cpp',
         "cpp/kminhash.cpp",
+        "cpp/rminhash.cpp",
         'cpp/murmurhash3.cpp',
         'cpp/init.cpp'
     ],
@@ -19,7 +20,7 @@ ext_module = Extension(
 
 setup(
     name='FastSketchLSH',
-    version='0.2.0',
+    version='0.3.0',
     description='High-performance MinHash implementation in C++',
     ext_modules=[ext_module],
     license='MIT',

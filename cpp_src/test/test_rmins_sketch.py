@@ -2,20 +2,20 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from FastSketchLSH import CMinSketch
+from FastSketchLSH import RMinSketch
 from simulation.util import estimate_jaccard, actual_jaccard
 
 
 if __name__ == '__main__':
     t = 256
-    A = set(range(0, 3000))
-    B = set(range(500, 3500))
+    A = set(range(500, 2000))
+    B = set(range(1000, 2500))
 
     print(f"|A| = {len(A)}, |B| = {len(B)}")
     true_j = actual_jaccard(A, B)
     print(f"True Jaccard: {true_j:.4f}")
 
-    sketcher = CMinSketch()
+    sketcher = RMinSketch()
     print("Generating sketches...")
     S_A = sketcher.sketch(A)
     S_B = sketcher.sketch(B)

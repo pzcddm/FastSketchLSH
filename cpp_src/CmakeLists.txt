@@ -12,6 +12,7 @@ find_package(pybind11 REQUIRED)
 add_library(FastSketchLSH
     cpp/cminhash.cpp
     cpp/kminhash.cpp
+    cpp/rminhash.cpp
     cpp/murmurhash3.cpp
 )
 target_include_directories(FastSketchLSH PUBLIC include)
