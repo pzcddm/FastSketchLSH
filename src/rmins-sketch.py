@@ -37,6 +37,5 @@ class RMinHashSketch:
                 a, b = self.perm_pairs[j]
                 self.hash_values[j] = np.minimum(self.hash_values[j], _permute_hash(hash_val, a, b))
         return self.hash_values.tolist()
-    # Cmin实现，Rmin和CMin区别
 
 

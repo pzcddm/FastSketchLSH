@@ -7,7 +7,7 @@
 #include <algorithm>
 #include "murmurhash.h"
 
-class CMinSketch
+class RMinHashSketch
 {
 private:
   size_t num_perm;
@@ -17,6 +17,6 @@ private:
   std::vector<uint64_t> pi_precomputed;
   std::vector<uint64_t> hash_values;
 public:
-  CMinSketch(size_t num_perm = 128, uint32_t seed = 42);
+  CMinHashSketch(size_t num_perm = 128, uint32_t seed = 42);
   std::vector<uint32_t> sketch(const std::vector<int>& items);
 };

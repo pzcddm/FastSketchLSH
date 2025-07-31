@@ -8,7 +8,7 @@ namespace py = pybind11;
 PYBIND11_MODULE(FastSketchLSH, m) {
     m.attr("__version__") = "0.2.0";
 
-    py::class_<CMinHashSketch>(m, "CMinHashSketch")
+    py::class_<CMinSketch>(m, "CMinSketch")
         .def(py::init<size_t, uint32_t>(),
              py::arg("num_perm") = 128,
              py::arg("seed") = 42,
@@ -16,7 +16,7 @@ PYBIND11_MODULE(FastSketchLSH, m) {
              "  num_perm: Number of permutations (default=128)\n"
              "  seed: Random seed (0 to 0xFFFFFFFF, default=42)")
         
-        .def("sketch", [](CMinHashSketch& self, py::iterable items) {
+        .def("sketch", [](CMinSketch& self, py::iterable items) {
             if (items.is_none() || py::len(items) == 0) {
                   throw py::value_error("Items cannot be empty");
               }
@@ -34,7 +34,7 @@ PYBIND11_MODULE(FastSketchLSH, m) {
         }, py::arg("items"),
           "Compute MinHash signature for integer sets using CMinHashSketch algorithm");
 
-    py::class_<KMinHashSketch>(m, "KMinHashSketch")
+    py::class_<KMinSketch>(m, "KMinSketch")
         .def(py::init<size_t, uint32_t>(),
                 py::arg("k") = 128,
                 py::arg("seed") = 42,
@@ -42,7 +42,7 @@ PYBIND11_MODULE(FastSketchLSH, m) {
                 "  k: Sketch size (default=128)\n"
                 "  seed: Random seed (0 to 0xFFFFFFFF, default=42)")
 
-        .def("sketch", [](KMinHashSketch& self, py::iterable items) {
+        .def("sketch", [](KMinSketch& self, py::iterable items) {
             if (items.is_none() || py::len(items) == 0) {
                 throw py::value_error("Items cannot be empty");
             }

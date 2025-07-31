@@ -1,7 +1,7 @@
 #include "../include/kminhash.h"
 #include <algorithm>
 
-KMinHashSketch::KMinHashSketch(size_t k, uint32_t random_seed) : k_(k) {
+KMinSketch::KMinSketch(size_t k, uint32_t random_seed) : k_(k) {
     if (k <= 0) {
         throw std::invalid_argument("Sketch size k must be positive");
     }
@@ -9,7 +9,7 @@ KMinHashSketch::KMinHashSketch(size_t k, uint32_t random_seed) : k_(k) {
     min_hashes_.resize(k_, std::numeric_limits<uint64_t>::max());
 }
 
-std::vector<uint64_t> KMinHashSketch::sketch(const std::vector<int>& items) {
+std::vector<uint64_t> KMinSketch::sketch(const std::vector<int>& items) {
     std::fill(min_hashes_.begin(), min_hashes_.end(), std::numeric_limits<uint64_t>::max()); 
     for (size_t i = 0; i < k_; ++i) {
         for (const auto& item : items) {

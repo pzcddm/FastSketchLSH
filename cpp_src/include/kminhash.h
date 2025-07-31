@@ -5,7 +5,7 @@
 #include <limits>
 #include <string>
 #include "murmurhash.h"
-class KMinHashSketch {
+class KMinSketch {
 private:
     size_t k_;
     std::vector<uint32_t> hash_seeds_;
@@ -21,6 +21,6 @@ private:
     }
 
 public:
-    KMinHashSketch(size_t k, uint32_t random_seed = 42);
+    KMinSketch(size_t k, uint32_t random_seed = 42);
     std::vector<uint64_t> sketch(const std::vector<int>& items);
 };

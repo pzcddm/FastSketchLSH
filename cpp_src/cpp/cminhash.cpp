@@ -1,6 +1,6 @@
 #include "../include/cminhash.h"
 
-CMinHashSketch::CMinHashSketch (size_t num_perm, uint32_t seed) 
+CMinSketch::CMinSketch (size_t num_perm, uint32_t seed) 
     : num_perm(num_perm), seed(seed), 
       hash_values(num_perm, std::numeric_limits<uint64_t>::max()){
   std::mt19937_64 rng (seed);
@@ -15,7 +15,7 @@ CMinHashSketch::CMinHashSketch (size_t num_perm, uint32_t seed)
   }
 }
 
-std::vector<uint32_t> CMinHashSketch::sketch(const std::vector<int>& items) {
+std::vector<uint32_t> CMinSketch::sketch(const std::vector<int>& items) {
     std::fill(hash_values.begin(), hash_values.end(), std::numeric_limits<uint64_t>::max());
     for (const auto item : items) {
         // use MurmurHash3_x64_128 to compute hash value
