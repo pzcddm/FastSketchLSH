@@ -13,6 +13,7 @@ add_library(FastSketchLSH
     cpp/cminhash.cpp
     cpp/kminhash.cpp
     cpp/rminhash.cpp
+    cpp/fasthash.cpp
     cpp/murmurhash3.cpp
 )
 target_include_directories(FastSketchLSH PUBLIC include)

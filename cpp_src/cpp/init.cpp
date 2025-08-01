@@ -3,6 +3,7 @@
 #include "../include/cminhash.h"
 #include "../include/kminhash.h"
 #include "../include/rminhash.h"
+#include "../include/fasthash.h"
 
 namespace py = pybind11;
 
@@ -86,4 +87,30 @@ PYBIND11_MODULE(FastSketchLSH, m) {
           return self.sketch(int_items);
       }, py::arg("items"),
         "Compute MinHash signature for integer sets using RMinSketch algorithm");
+
+    py::class_<FastSimilaritySketch>(m, "FastSimilaritySketch")
+      .def( py::init<size_t, uint32_t>(),
+            py::arg("sketch_size") = 128,
+            py::arg("seed") = 42,
+            "Initialize FastSimilaritySketch with:\n"
+            "  sketch_size: Number of sketch\n"
+            "  seed: Random seed (0 to 0xFFFFFFFF, default=42)")
+
+      .def("sketch", [](FastSimilaritySketch& self, py::iterable items) {
+          if (items.is_none() || py::len(items) == 0) {
+              throw py::value_error("Items cannot be empty");
+          }
+          std::vector<int> int_items;
+          for (auto item : items) {
+              try {
+                  int_items.push_back(py::cast<int>(item));
+              } catch (const py::cast_error&) {
+                  throw py::value_error(
+                    "FastSimilaritySketch.sketch() requires string-convertible items. "
+                    "Use FastSimilaritySketch for integer inputs.");
+              }
+          }
+          return self.sketch(int_items);
+      }, py::arg("items"),
+        "Compute MinHash signature for integer sets using FastSimilaritySketch algorithm");
 }

@@ -8,6 +8,7 @@ ext_module = Extension(
         'cpp/cminhash.cpp',
         "cpp/kminhash.cpp",
         "cpp/rminhash.cpp",
+        "cpp/fasthash.cpp",
         'cpp/murmurhash3.cpp',
         'cpp/init.cpp'
     ],
