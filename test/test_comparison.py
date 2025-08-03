@@ -28,9 +28,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from typing import List, Tuple
 
 # Import our sketch implementations
-from src.fast_sketch import FastSimilaritySketch
+# from src.fast_sketch import FastSimilaritySketch
 from src.datasketch_sketch import DatasketchMinHashSketch
 from src.cmins_rensa_sketch import CMinHashSketch
+from FastSketchLSH import FastSimilaritySketch
 
 from simulation.util import estimate_jaccard, actual_jaccard, generate_interval_sets_with_jaccard
 

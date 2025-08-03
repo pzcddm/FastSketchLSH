@@ -23,6 +23,7 @@ std::vector<uint64_t> FastSimilaritySketch::sketch(const std::vector<int>& items
     using SketchPair = std::pair<size_t, uint64_t>;
     std::vector<SketchPair> S(sketch_size, {std::numeric_limits<size_t>::max(), 
                                   std::numeric_limits<uint64_t>::max()});
+    std::vector<bool> filled_bins(sketch_size, false);
     size_t filled_count = 0;
     
     for (size_t i = 0; i < hash_seeds.size(); ++i) {
@@ -37,7 +38,8 @@ std::vector<uint64_t> FastSimilaritySketch::sketch(const std::vector<int>& items
             
             if (v < S[b]) {
                 S[b] = v;
-                if (filled_count < sketch_size && S[b].first != std::numeric_limits<size_t>::max()) {
+                if (!filled_bins[b]) {
+                    filled_bins[b] = true;
                     filled_count++;
                 }
             }
