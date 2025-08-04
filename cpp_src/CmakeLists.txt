@@ -1,23 +1,44 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.16)  # 提升最低版本要求以支持现代特性
 project(FastSketchLSH LANGUAGES CXX)
 
-# 设置编译选项
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native")
+# 跨平台编译选项
+if(MSVC)
+    add_compile_options(/arch:AVX2 /std:c++17 /fp:fast)
+    add_definitions(-D_USE_MATH_DEFINES -DNOMINMAX)
+else()
+    add_compile_options(-mavx2 -mbmi2 -mfma -msse4.2 -std=c++17 -ffast-math)
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+endif()
 
-# 查找PyBind11
+# 动态检测SIMD指令集
+option(ENABLE_AVX2 "Enable AVX2 instructions" ON)
+option(ENABLE_SSE4 "Enable SSE4.2 instructions" ON)
+option(ENABLE_NEON "Enable ARM NEON instructions" OFF)
+
+if(ENABLE_AVX2)
+    add_definitions(-DUSE_AVX2)
+endif()
+if(ENABLE_SSE4)
+    add_definitions(-DUSE_SSE)
+endif()
+
+# PyBind11集成
 find_package(pybind11 REQUIRED)
 
-# 添加库目标
-add_library(FastSketchLSH
+# 主库目标
+add_library(FastSketchLSH_core STATIC
     cpp/cminhash.cpp
     cpp/kminhash.cpp
     cpp/rminhash.cpp
     cpp/fasthash.cpp
+    cpp/fasthash_simd.cpp
     cpp/murmurhash3.cpp
 )
-target_include_directories(FastSketchLSH PUBLIC include)
+target_include_directories(FastSketchLSH_core PUBLIC include)
 
 # Python模块
 pybind11_add_module(FastSketchLSH cpp/init.cpp)
-target_link_libraries(FastSketchLSH PRIVATE FastSketchLSH)
+target_link_libraries(FastSketchLSH PRIVATE FastSketchLSH_core pybind11::module)
+
+# 安装配置
+install(TARGETS FastSketchLSH LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX})
