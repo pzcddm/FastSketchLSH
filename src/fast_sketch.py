@@ -48,6 +48,9 @@ class FastSimilaritySketch:
                 b = hash_val % self.t if i < self.t else i - self.t
                 v = (i, hash_val)
 
+                # v is a pair of (round_idx, hash_val) because a better way it to concatenate them to one value
+                # and that make the value from later round must be larger than the value from earlier round
+                # which is aligned with the paper
                 if v < S[b]:
                     S[b] = v
                     if not filled_bins[b]:
