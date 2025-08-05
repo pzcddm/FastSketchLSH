@@ -1,14 +1,19 @@
 import os
+import sys
+# Add project root to Python path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, project_root)
+
 import mmh3
 import numpy as np
 import matplotlib.pyplot as plt
 import random
-from util import generate_interval_sets_with_jaccard, estimate_jaccard
+from simulation.util import generate_interval_sets_with_jaccard, estimate_jaccard
 from src.fast_sketch import FastSimilaritySketch
 
 # Set fixed random seeds for reproducibility
-RANDOM_SEED = 42
-NUMPY_SEED = 42
+RANDOM_SEED = 52
+NUMPY_SEED = 52
 
 # 添加这两行来解决中文显示和负号显示问题
 plt.rcParams['font.sans-serif'] = ['SimHei']  # 指定默认字体为黑体
