@@ -1,16 +1,14 @@
 // fast_similarity_sketch_avx512_packed.cpp
+#include "../include/fasthash_simd.h"
 #include <immintrin.h>
-#include <bits/stdc++.h>
+#include <cstdint>
+#include <vector>
+#include <string>
+#include <random>
 using namespace std;
 
-// TODO: Can we pick a SIMD friendly Hash method? Not fnv1a64?
-// TODO (Maybe): Test scatter and gather in line 100 - 111 (逐lane 更新) 但是得处理冲突情况
 
-// ===================== 公共常量与工具 =====================
-static inline uint64_t INF_KEY() { return ~0ull; }     // 空/极大
-static constexpr int I_BITS = 12;                      // i 用 12 bits（支持到 4095）
-static constexpr int I_SHIFT = 64 - I_BITS;            // 放在高位
-static constexpr uint64_t H48_MASK = (1ull << 48) - 1; // 低 48 位
+
 
 static inline uint64_t pack_key(uint64_t i, uint64_t h48) {
     return (i << I_SHIFT) | (h48 & H48_MASK);
@@ -114,105 +112,100 @@ static inline void round1_block_avx512_no_reduce(
 }
 
 // ===================== 主类：2t 轮（packed key 版本） =====================
-struct FastSimilaritySketchAVX512Packed {
-    int t;
-    uint64_t t_mask;        // t-1（t 为 2 的幂）
-    vector<uint64_t> seeds; // 2*t seeds
 
-    explicit FastSimilaritySketchAVX512Packed(int sketch_size, uint64_t random_seed=42)
-        : t(sketch_size), t_mask(sketch_size-1), seeds(2*sketch_size)
-    {
-        if (t<=0 || (t & (t-1))!=0) throw runtime_error("t must be a power of two.");
-        std::mt19937_64 rng(random_seed);
-        for (int i=0;i<2*t;i++) seeds[i] = rng();
-        // 断言：i 至多到 2t-1（≤ 1023 when t≤512），安全落在 12 bit。
-        if (2ULL * (uint64_t)t - 1 >= (1ull<<I_BITS))
-            throw runtime_error("I_BITS too small for 2*t rounds.");
+FastSimilaritySketchAVX512Packed::FastSimilaritySketchAVX512Packed(int sketch_size, uint64_t random_seed)
+    : t(sketch_size), t_mask(sketch_size-1), seeds(2*sketch_size)
+{
+    if (t<=0 || (t & (t-1))!=0) throw runtime_error("t must be a power of two.");
+    std::mt19937_64 rng(random_seed);
+    for (int i=0;i<2*t;i++) seeds[i] = rng();
+    // 断言：i 至多到 2t-1（≤ 1023 when t≤512），安全落在 12 bit。
+    if (2ULL * (uint64_t)t - 1 >= (1ull<<I_BITS))
+        throw runtime_error("I_BITS too small for 2*t rounds.");
+}
+
+vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<string>& A) {
+    const int n = (int)A.size();
+
+    // 0) 预哈希（一次），避免 2t 次扫描长串
+    vector<uint64_t> base(n);
+    for (int j=0;j<n;j++)
+        base[j] = fnv1a64((const uint8_t*)A[j].data(), A[j].size());
+
+    // 1) 桶：仅 1 组（packed key），filled 标记
+    vector<uint64_t> S(t, INF_KEY());
+    vector<uint8_t>  filled(t, 0);
+
+    // ==================== 第 1 轮：i=0..t-1 ====================
+    for (int i=0; i<t; ++i) {
+        const uint64_t seed_i = seeds[i];
+        warm_cache(S.data(), t); // 可选
+
+        int j = 0;
+        for (; j+16<=n; j+=16) {
+            round1_block_avx512_no_reduce(&base[j], 16, (uint64_t)i, seed_i,
+                                          S.data(), filled.data(), t_mask);
+        }
+        if (j < n) {
+            round1_block_avx512_no_reduce(&base[j], n-j, (uint64_t)i, seed_i,
+                                          S.data(), filled.data(), t_mask);
+        }
+
+        // 轮末：一次性 SIMD 统计 filled_cnt（不在轮内维护）
+        int filled_cnt = count_filled_simd(filled.data(), t);
+        if (filled_cnt == t) break;
     }
 
-    vector<uint64_t> sketch(const vector<string>& A) const {
-        const int n = (int)A.size();
+    // ==================== 第 2 轮：i=t..2t-1，只补空桶 ====================
+    // 因为 key 的高位是 i，i>=t 的 key 一定大于第 1 轮写入的 key，
+    // 所以这里只会写原先空桶（S[b]==INF_KEY），不会覆盖已有桶。
+    int filled_cnt = count_filled_simd(filled.data(), t);
+    if (filled_cnt < t) {
+        alignas(64) uint64_t h_lane[16];
 
-        // 0) 预哈希（一次），避免 2t 次扫描长串
-        vector<uint64_t> base(n);
-        for (int j=0;j<n;j++)
-            base[j] = fnv1a64((const uint8_t*)A[j].data(), A[j].size());
-
-        // 1) 桶：仅 1 组（packed key），filled 标记
-        vector<uint64_t> S(t, INF_KEY());
-        vector<uint8_t>  filled(t, 0);
-
-        // ==================== 第 1 轮：i=0..t-1 ====================
-        for (int i=0; i<t; ++i) {
+        for (int i=t; i<2*t; ++i) {
+            const int b = i - t;
+            if (filled[b]) continue; // 已填的桶跳过
             const uint64_t seed_i = seeds[i];
-            warm_cache(S.data(), t); // 可选
 
+            // 在所有元素上找 min_h（AVX-512 批处理 + 批内水平最小）
+            uint64_t min_h = ~0ull;
             int j = 0;
             for (; j+16<=n; j+=16) {
-                round1_block_avx512_no_reduce(&base[j], 16, (uint64_t)i, seed_i,
-                                              S.data(), filled.data(), t_mask);
+                __m512i x = _mm512_loadu_si512((const void*)&base[j]);
+                x = _mm512_xor_si512(x, _mm512_set1_epi64((long long)seed_i));
+                __m512i h = splitmix64_vec(x);
+                _mm512_store_si512((void*)h_lane, h);
+                for (int k=0;k<16;k++) min_h = std::min(min_h, h_lane[k]);
             }
-            if (j < n) {
-                round1_block_avx512_no_reduce(&base[j], n-j, (uint64_t)i, seed_i,
-                                              S.data(), filled.data(), t_mask);
+            for (; j<n; ++j) {
+                uint64_t h = splitmix64(base[j] ^ seed_i);
+                if (h < min_h) min_h = h;
             }
-
-            // 轮末：一次性 SIMD 统计 filled_cnt（不在轮内维护）
-            int filled_cnt = count_filled_simd(filled.data(), t);
-            if (filled_cnt == t) break;
-        }
-
-        // ==================== 第 2 轮：i=t..2t-1，只补空桶 ====================
-        // 因为 key 的高位是 i，i>=t 的 key 一定大于第 1 轮写入的 key，
-        // 所以这里只会写原先空桶（S[b]==INF_KEY），不会覆盖已有桶。
-        int filled_cnt = count_filled_simd(filled.data(), t);
-        if (filled_cnt < t) {
-            alignas(64) uint64_t h_lane[16];
-
-            for (int i=t; i<2*t; ++i) {
-                const int b = i - t;
-                if (filled[b]) continue; // 已填的桶跳过
-                const uint64_t seed_i = seeds[i];
-
-                // 在所有元素上找 min_h（AVX-512 批处理 + 批内水平最小）
-                uint64_t min_h = ~0ull;
-                int j = 0;
-                for (; j+16<=n; j+=16) {
-                    __m512i x = _mm512_loadu_si512((const void*)&base[j]);
-                    x = _mm512_xor_si512(x, _mm512_set1_epi64((long long)seed_i));
-                    __m512i h = splitmix64_vec(x);
-                    _mm512_store_si512((void*)h_lane, h);
-                    for (int k=0;k<16;k++) min_h = std::min(min_h, h_lane[k]);
-                }
-                for (; j<n; ++j) {
-                    uint64_t h = splitmix64(base[j] ^ seed_i);
-                    if (h < min_h) min_h = h;
-                }
 
 #ifdef PREFETCH_BUCKET
-                _mm_prefetch((const char*)&S[b], _MM_HINT_T0);
+            _mm_prefetch((const char*)&S[b], _MM_HINT_T0);
 #endif
-                const uint64_t key = pack_key((uint64_t)i, min_h);
-                if (key < S[b]) {
-                    S[b] = key;
-                    filled[b] = 1; // 只打标，计数在轮末/末尾做
-                }
+            const uint64_t key = pack_key((uint64_t)i, min_h);
+            if (key < S[b]) {
+                S[b] = key;
+                filled[b] = 1; // 只打标，计数在轮末/末尾做
             }
-
-            // 第二轮结束后再做一次 filled 计数（如需返回/断言）
-            filled_cnt = count_filled_simd(filled.data(), t);
-            (void)filled_cnt;
         }
 
-        // 2) 输出：每桶取低 48 位哈希
-        vector<uint64_t> out(t);
-        for (int b=0;b<t;b++) {
-            const uint64_t key = S[b];
-            out[b] = (key == INF_KEY()) ? 0ull : (key & H48_MASK);
-        }
-        return out;
+        // 第二轮结束后再做一次 filled 计数（如需返回/断言）
+        filled_cnt = count_filled_simd(filled.data(), t);
+        (void)filled_cnt;
     }
-};
+
+    // 2) 输出：每桶取低 48 位哈希
+    vector<uint64_t> out(t);
+    for (int b=0;b<t;b++) {
+        const uint64_t key = S[b];
+        out[b] = (key == INF_KEY()) ? 0ull : (key & H48_MASK);
+    }
+    return out;
+}
 
 // ===================== Demo =====================
 #ifdef DEMO_MAIN
