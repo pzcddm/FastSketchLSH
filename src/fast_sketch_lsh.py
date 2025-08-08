@@ -98,10 +98,3 @@ class FastSketchLSH:
         for b in range(self.bands):
             self._buckets[b].clear()
         self._keys.clear()
-
-    @staticmethod
-    def _estimate_jaccard(sketch1: List[int], sketch2: List[int]) -> float:
-        """Estimate Jaccard similarity from two sketches."""
-        assert len(sketch1) == len(sketch2)
-        matches = sum(1 for a, b in zip(sketch1, sketch2) if a == b)
-        return matches / len(sketch1) 
