@@ -37,7 +37,7 @@ class FastSimilaritySketch:
         encoded = [str(a).encode('utf-8') for a in A]
         
         S = [(1 << 64) - 1] * self.t
-        c = 0
+        cnt = 0
         filled_bins = [False] * self.t
         
         for i, seed_np in enumerate(self.hash_seeds):
@@ -50,7 +50,7 @@ class FastSimilaritySketch:
                 # To have a better space locality, we encode a here
                 hash_val = mmh3.hash64(element_str, seed=current_seed, signed=False)[0]
                 
-                b = hash_val % self.t if i < self.t else i - self.t
+                bin_idx = hash_val % self.t if i < self.t else i - self.t
                 
                 # Get 52-bit hash using bit mixing to reduce collision patterns
                 # XOR higher and lower bits to distribute entropy better
@@ -60,12 +60,12 @@ class FastSimilaritySketch:
                 # Top 12 bits: round index i, Bottom 52 bits: hash value
                 # This ensures later rounds always produce larger values than earlier rounds
                 v = (i << 52) | hash_52bit
-                if v < S[b]:
-                    S[b] = v
-                    if not filled_bins[b]:
-                        filled_bins[b] = True
-                        c += 1
-            if c == self.t:
+                if v < S[bin_idx]:
+                    S[bin_idx] = v
+                    if not filled_bins[bin_idx]:
+                        filled_bins[bin_idx] = True
+                        cnt += 1
+            if cnt == self.t:
                 break
                 
         final_sketch = list(S)
