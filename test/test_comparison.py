@@ -96,7 +96,7 @@ class SketchComparison:
         for trial in range(num_trials):
             # Generate test sets with 50% overlap, unique per trial
             set_a, set_b = self.generate_test_sets(n, overlap_ratio=0.5, trial=trial)
-            print(set_a)
+
             true_jaccard = actual_jaccard(set_a, set_b)
 
             # Test FastSimilaritySketch
@@ -205,7 +205,7 @@ class SketchComparison:
                 print(f"  Speedup ratio (Datasketch/CMins): {result['datasketch_speedup_vs_cmins']:.2f}")
                 print()
 
-    def save_results_to_csv(self, filename: str = "sketch_comparison_results_without_kmins_rmins.csv") -> None:
+    def save_results_to_csv(self, filename: str = "sketch_comparison_results_simd.csv") -> None:
         """
         Save comparison results to a CSV file in the records directory.
         Args:

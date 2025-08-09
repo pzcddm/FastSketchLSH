@@ -5,17 +5,30 @@
 #include <vector>
 #include <string>
 #include <random>
+#ifdef DEMO_MAIN
+#include <iostream>
+#endif
 using namespace std;
 
 
 
 
-static inline uint64_t pack_key(uint64_t i, uint64_t h48) {
-    return (i << I_SHIFT) | (h48 & H48_MASK);
+inline uint64_t pack_key(uint64_t i, uint64_t h52) {
+    return (i << I_SHIFT) | (h52 & H52_MASK);
 }
 
-// 一次性预哈希：FNV-1a(64)（长串只扫一次）
-static inline uint64_t fnv1a64(const uint8_t* p, size_t n) {
+inline __m512i pack_key_vec(uint64_t i, __m512i h52) {
+    // Broadcast i into a vector of 64-bit lanes and shift into top bits
+    const __m512i vi = _mm512_set1_epi64((long long)i);
+    const __m512i hi = _mm512_slli_epi64(vi, I_SHIFT);
+    const __m512i mask = _mm512_set1_epi64((long long)H52_MASK);
+    const __m512i lo = _mm512_and_si512(h52, mask);
+    return _mm512_or_si512(hi, lo);
+}
+
+// 一次性预哈希：FNV-1a(64) 专门对字符串这种不定长的字节编码方式
+// TODO: Can we pick a SIMD friendly Hash method? Not fnv1a64? Please check and do some experiments. But the 
+inline uint64_t fnv1a64(const uint8_t* p, size_t n) {
     const uint64_t OFF = 1469598103934665603ull;
     const uint64_t PRM = 1099511628211ull;
     uint64_t h = OFF;
@@ -23,16 +36,27 @@ static inline uint64_t fnv1a64(const uint8_t* p, size_t n) {
     return h;
 }
 
+// 现在输入是32位整数，写一个简单友好快速的hash方法
+inline uint64_t hash_int32(uint32_t x) {
+    // Use SplitMix64 mixing on the 32-bit input promoted to 64-bit.
+    // This provides good avalanche and pairs well with the later splitmix64(base ^ seed) stage.
+    uint64_t z = (uint64_t)x + 0x9E3779B97F4A7C15ull;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+    z = z ^ (z >> 31);
+    return z;
+}
+
 // splitmix64（scalar）
-static inline uint64_t splitmix64(uint64_t x){
+inline uint64_t splitmix64(uint64_t x){
     x += 0x9E3779B97F4A7C15ull;
     x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
     x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
     return x ^ (x >> 31);
 }
 
-// splitmix64（AVX-512, 16-lane）
-static inline __m512i splitmix64_vec(__m512i x){
+// splitmix64（AVX-512, 8-lane for uint64）
+inline __m512i splitmix64_vec(__m512i x){
     const __m512i C1 = _mm512_set1_epi64(0x9E3779B97F4A7C15ull);
     const __m512i M1 = _mm512_set1_epi64(0xBF58476D1CE4E5B9ull);
     const __m512i M2 = _mm512_set1_epi64(0x94D049BB133111EBull);
@@ -45,40 +69,55 @@ static inline __m512i splitmix64_vec(__m512i x){
     return t;
 }
 
-// SIMD 统计 filled 数组之和（uint8_t ∈ {0,1}）
-static inline int count_filled_simd(const uint8_t* filled, int t){
-    int cnt = 0, i = 0;
-    alignas(64) uint64_t tmp[8];
-    const __m512i z = _mm512_setzero_si512();
-    for (; i + 64 <= t; i += 64) {
-        __m512i v = _mm512_loadu_si512((const void*)(filled + i)); // 64 字节
-        __m512i sad = _mm512_sad_epu8(v, z); // 每 8B 求和 → 8 个 u64
-        _mm512_store_si512((void*)tmp, sad);
-        cnt += (int)(tmp[0] + tmp[1] + tmp[2] + tmp[3] + tmp[4] + tmp[5] + tmp[6] + tmp[7]);
-    }
-    for (; i < t; ++i) cnt += filled[i];
-    return cnt;
+// Hash 8 int32 values into 8 uint64 using SplitMix64-style mixing
+inline void hash_int32x8_to_u64_avx512(const int* src, uint64_t* dst) {
+    __m256i v32 = _mm256_loadu_si256((const __m256i*)src);
+    __m512i x64 = _mm512_cvtepi32_epi64(v32);                 // sign-extends
+    const __m512i mask32 = _mm512_set1_epi64(0xFFFFFFFFull);  // clear sign-extended high bits
+    x64 = _mm512_and_si512(x64, mask32);
+    __m512i h = splitmix64_vec(x64);
+    _mm512_storeu_si512((void*)dst, h);
 }
 
-// 可选：每轮开始时“暖缓存”（把 S 的若干行预取到 L1）
-static inline void warm_cache(uint64_t* S, int t){
-#ifdef WARM_CACHE
-    for (int i = 0; i < t; i += 8)
-        _mm_prefetch((const char*)&S[i], _MM_HINT_T0);
-#endif
+// Horizontal min across 8 lanes of unsigned 64-bit using AVX-512 + VL
+// TODO: I am not sure if this is fast, maybe it is even slower than the scalar version. Please check and do some experiments.
+inline uint64_t horizontal_min_epu64(__m512i v) {
+    __m256i m256  = _mm256_min_epu64(_mm512_castsi512_si256(v),
+                                     _mm512_extracti64x4_epi64(v, 1));
+    __m128i m128  = _mm_min_epu64(_mm256_castsi256_si128(m256),
+                                  _mm256_extracti128_si256(m256, 1));
+    uint64_t a = (uint64_t)_mm_cvtsi128_si64(m128);
+    uint64_t b = (uint64_t)_mm_extract_epi64(m128, 1);
+    return a < b ? a : b;
+}
+
+// SIMD check: whether all buckets in S are filled (i.e., not INF_KEY)
+inline bool all_filled_avx512(const uint64_t* S, int t) {
+    int i = 0;
+    const __m512i inf = _mm512_set1_epi64((long long)INF_KEY());
+    for (; i + 8 <= t; i += 8) {
+        __m512i v = _mm512_loadu_si512((const void*)(S + i));
+        // Compare equal to INF_KEY; if any bit set, there exists an empty bucket
+        __mmask8 meq = _mm512_cmpeq_epu64_mask(v, inf);
+        if (meq) return false;
+    }
+    for (; i < t; ++i) {
+        if (S[i] == INF_KEY()) return false;
+    }
+    return true;
 }
 
 // ===================== 第 1 轮：AVX-512 批算 + 逐 lane 更新 =====================
 // 说明：不做批内 reduce-by-bucket；对每个 lane 顺序：读 S[b] → 比较 → 写 S[b]。
-static inline void round1_block_avx512_no_reduce(
+inline void round1_block_avx512_no_reduce(
     const uint64_t* base_block, int nlanes,
     uint64_t round_i, uint64_t seed_i,
-    uint64_t* S, uint8_t* filled,
+    uint64_t* S,
     uint64_t t_mask)
 {
-    alignas(64) uint64_t h_lane[16], b_lane[16], key_lane[16];
+    alignas(64) uint64_t h_lane[8], b_lane[8], key_lane[8];
 
-    if (nlanes == 16) {
+    if (nlanes == 8) {
         __m512i x = _mm512_loadu_si512((const void*)base_block);
         x = _mm512_xor_si512(x, _mm512_set1_epi64((long long)seed_i));
         __m512i h = splitmix64_vec(x);
@@ -92,8 +131,14 @@ static inline void round1_block_avx512_no_reduce(
             b_lane[k] = h & t_mask;
         }
     }
-    for (int k=0;k<nlanes;k++) {
-        key_lane[k] = pack_key(round_i, h_lane[k]);
+    if (nlanes == 8) {
+        __m512i hv = _mm512_loadu_si512((const void*)h_lane);
+        __m512i kv = pack_key_vec(round_i, hv);
+        _mm512_store_si512((void*)key_lane, kv);
+    } else {
+        for (int k=0;k<nlanes;k++) {
+            key_lane[k] = pack_key(round_i, h_lane[k]);
+        }
     }
 
     // 逐 lane 更新（可选预取：让 S[b] 尽量命中 L1）
@@ -105,8 +150,7 @@ static inline void round1_block_avx512_no_reduce(
         const uint64_t cand = key_lane[k];
         const uint64_t old  = S[b];
         if (cand < old) {
-            S[b]      = cand;
-            filled[b] = 1; // 仅打标；计数在轮末 SIMD 汇总
+            S[b] = cand;
         }
     }
 }
@@ -119,64 +163,64 @@ FastSimilaritySketchAVX512Packed::FastSimilaritySketchAVX512Packed(int sketch_si
     if (t<=0 || (t & (t-1))!=0) throw runtime_error("t must be a power of two.");
     std::mt19937_64 rng(random_seed);
     for (int i=0;i<2*t;i++) seeds[i] = rng();
-    // 断言：i 至多到 2t-1（≤ 1023 when t≤512），安全落在 12 bit。
-    if (2ULL * (uint64_t)t - 1 >= (1ull<<I_BITS))
-        throw runtime_error("I_BITS too small for 2*t rounds.");
+    if ((uint64_t)t > (1ull<<I_BITS))
+        throw runtime_error("t can not be larger than 4096.");
 }
 
-vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<string>& A) {
+vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<int>& A) {
     const int n = (int)A.size();
 
     // 0) 预哈希（一次），避免 2t 次扫描长串
     vector<uint64_t> base(n);
-    for (int j=0;j<n;j++)
-        base[j] = fnv1a64((const uint8_t*)A[j].data(), A[j].size());
+    int j0 = 0;
+    for (; j0 + 8 <= n; j0 += 8) {
+        hash_int32x8_to_u64_avx512(&A[j0], &base[j0]);
+    }
+    for (; j0 < n; ++j0) {
+        base[j0] = hash_int32(static_cast<uint32_t>(A[j0]));
+    }
 
-    // 1) 桶：仅 1 组（packed key），filled 标记
+    // 1) Buckets: one group (packed key)
     vector<uint64_t> S(t, INF_KEY());
-    vector<uint8_t>  filled(t, 0);
-
-    // ==================== 第 1 轮：i=0..t-1 ====================
+    // ==================== 第 0 ~ t -1 轮：i=0..t-1 ====================
     for (int i=0; i<t; ++i) {
         const uint64_t seed_i = seeds[i];
-        warm_cache(S.data(), t); // 可选
 
         int j = 0;
-        for (; j+16<=n; j+=16) {
-            round1_block_avx512_no_reduce(&base[j], 16, (uint64_t)i, seed_i,
-                                          S.data(), filled.data(), t_mask);
+        // AVX-512 8 lanes for uint64
+        for (; j+8<=n; j+=8) {
+            round1_block_avx512_no_reduce(&base[j], 8, (uint64_t)i, seed_i,
+                                          S.data(), t_mask);
         }
         if (j < n) {
             round1_block_avx512_no_reduce(&base[j], n-j, (uint64_t)i, seed_i,
-                                          S.data(), filled.data(), t_mask);
+                                          S.data(), t_mask);
         }
 
-        // 轮末：一次性 SIMD 统计 filled_cnt（不在轮内维护）
-        int filled_cnt = count_filled_simd(filled.data(), t);
-        if (filled_cnt == t) break;
+        // End of round: check whether all buckets are filled
+        if (all_filled_avx512(S.data(), t)) break;
     }
 
-    // ==================== 第 2 轮：i=t..2t-1，只补空桶 ====================
+    // ==================== 第 t ~ 2t -1 轮：i=t..2t-1，只补空桶 ====================
     // 因为 key 的高位是 i，i>=t 的 key 一定大于第 1 轮写入的 key，
     // 所以这里只会写原先空桶（S[b]==INF_KEY），不会覆盖已有桶。
-    int filled_cnt = count_filled_simd(filled.data(), t);
-    if (filled_cnt < t) {
-        alignas(64) uint64_t h_lane[16];
+    if (!all_filled_avx512(S.data(), t)) {
+        alignas(64) uint64_t h_lane[8];
 
         for (int i=t; i<2*t; ++i) {
             const int b = i - t;
-            if (filled[b]) continue; // 已填的桶跳过
+            if (S[b] != INF_KEY()) continue; // Already filled bucket
             const uint64_t seed_i = seeds[i];
 
             // 在所有元素上找 min_h（AVX-512 批处理 + 批内水平最小）
             uint64_t min_h = ~0ull;
             int j = 0;
-            for (; j+16<=n; j+=16) {
+            for (; j+8<=n; j+=8) {
                 __m512i x = _mm512_loadu_si512((const void*)&base[j]);
                 x = _mm512_xor_si512(x, _mm512_set1_epi64((long long)seed_i));
                 __m512i h = splitmix64_vec(x);
-                _mm512_store_si512((void*)h_lane, h);
-                for (int k=0;k<16;k++) min_h = std::min(min_h, h_lane[k]);
+                uint64_t block_min = horizontal_min_epu64(h);
+                if (block_min < min_h) min_h = block_min;
             }
             for (; j<n; ++j) {
                 uint64_t h = splitmix64(base[j] ^ seed_i);
@@ -189,41 +233,30 @@ vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<string>& 
             const uint64_t key = pack_key((uint64_t)i, min_h);
             if (key < S[b]) {
                 S[b] = key;
-                filled[b] = 1; // 只打标，计数在轮末/末尾做
             }
         }
 
-        // 第二轮结束后再做一次 filled 计数（如需返回/断言）
-        filled_cnt = count_filled_simd(filled.data(), t);
-        (void)filled_cnt;
+        // All filled check (optional)
+        (void)all_filled_avx512;
     }
-
-    // 2) 输出：每桶取低 48 位哈希
-    vector<uint64_t> out(t);
-    for (int b=0;b<t;b++) {
-        const uint64_t key = S[b];
-        out[b] = (key == INF_KEY()) ? 0ull : (key & H48_MASK);
-    }
-    return out;
+    return S;
 }
 
 // ===================== Demo =====================
 #ifdef DEMO_MAIN
 int main(){
-    vector<string> A;
+    vector<int> A;
     A.reserve(5000);
     for (int i=0;i<5000;i++){
-        string s = "item_" + to_string(i);
-        if (i%13==0) s += string(2000, 'x'); // 模拟较长字符串（实际可到 1e4~3e4）
-        A.push_back(std::move(s));
+        A.push_back(i);
     }
 
     int t = 128; // 2 的幂：64/128/512 都 OK
     FastSimilaritySketchAVX512Packed sk(t, 42);
     auto v = sk.sketch(A);
 
-    cout << "sketch size = " << v.size() << "\nfirst 8 hash48 values:\n";
-    for (int i=0;i<min(8,(int)v.size());++i) cout << v[i] << "\n";
+    std::cout << "sketch size = " << v.size() << "\nfirst 8 hash values:\n";
+    for (int i=0;i<min(8,(int)v.size());++i) std::cout << v[i] << "\n";
     return 0;
 }
 #endif

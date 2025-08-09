@@ -127,15 +127,14 @@ PYBIND11_MODULE(FastSketchLSH, m) {
           if (items.is_none() || py::len(items) == 0) {
               throw py::value_error("Items cannot be empty");
           }
-          std::vector<std::string> int_items;
+          std::vector<int> int_items;
           for (auto item : items) {
               try {
                   int value = py::cast<int>(item);
-                  int_items.push_back(std::to_string(value));
+                  int_items.push_back(value);
               } catch (const py::cast_error&) {
                   throw py::value_error(
-                    "FastSimilaritySketchSIMD.sketch() requires string-convertible items. "
-                    "Use FastSimilaritySketchSIMD for integer inputs.");
+                    "FastSimilaritySketchSIMD.sketch() requires all items to be integers.");
               }
           }
           return self.sketch(int_items);
