@@ -1,5 +1,10 @@
 #include "../include/fasthash.h"
 #include "../include/murmurhash.h"
+#ifdef DEMO_MAIN
+#include <iostream>
+#endif
+using namespace std;
+
 
 FastSimilaritySketch::FastSimilaritySketch(size_t sketch_size, uint32_t random_seed) {
     if (sketch_size == 0) {
@@ -47,3 +52,22 @@ std::vector<uint64_t> FastSimilaritySketch::sketch(const std::vector<int>& items
     }
     return S;
 }
+
+// ===================== Demo =====================
+#ifdef DEMO_MAIN
+int main(){
+    vector<int> A;
+    A.reserve(5000);
+    for (int i=0;i<5000;i++){
+        A.push_back(i);
+    }
+
+    int t = 128; // 2 的幂：64/128/512 都 OK
+    FastSimilaritySketch sk(t, 42);
+    auto v = sk.sketch(A);
+
+    std::cout << "sketch size = " << v.size() << "\nfirst 8 hash values:\n";
+    for (int i=0;i<min(8,(int)v.size());++i) std::cout << v[i] << "\n";
+    return 0;
+}
+#endif
