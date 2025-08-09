@@ -96,6 +96,7 @@ class SketchComparison:
         for trial in range(num_trials):
             # Generate test sets with 50% overlap, unique per trial
             set_a, set_b = self.generate_test_sets(n, overlap_ratio=0.5, trial=trial)
+            print(set_a)
             true_jaccard = actual_jaccard(set_a, set_b)
 
             # Test FastSimilaritySketch
