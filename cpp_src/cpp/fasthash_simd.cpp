@@ -11,8 +11,6 @@
 using namespace std;
 
 
-
-
 inline uint64_t pack_key(uint64_t i, uint64_t h52) {
     return (i << I_SHIFT) | (h52 & H52_MASK);
 }
