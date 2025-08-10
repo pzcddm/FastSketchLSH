@@ -34,10 +34,13 @@ elif system_name == "Darwin":
     ]
     link_args.extend(["-stdlib=libc++"])
 else:  # Linux and others with libstdc++
-    # GCC/Clang flags
+    # 需要 AVX-512F/DQ/VL 支持以使用 fasthash_simd.cpp 中的 512 位指令与 64 位整数运算
     compile_args = [
         "-mavx2",
         "-mbmi2",
+        "-mavx512f",
+        "-mavx512dq",
+        "-mavx512vl",
         "-std=c++17",
         "-ffast-math",
         "-fvisibility=hidden",
