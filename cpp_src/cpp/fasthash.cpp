@@ -1,5 +1,6 @@
 #include "../include/fasthash.h"
 #include "../include/murmurhash.h"
+#include <stdexcept>
 #ifdef DEMO_MAIN
 #include <iostream>
 #endif
@@ -37,6 +38,36 @@ std::vector<uint64_t> FastSimilaritySketch::sketch(const std::vector<int>& items
         for (const auto& item : items) {
             uint64_t hash_val[2];
             MurmurHash3_x64_128(&item, sizeof(int), seed, hash_val);
+            size_t b = (i < sketch_size) ? (hash_val[0] % sketch_size) : (i - sketch_size);
+            uint64_t mixed = ((hash_val[0] >> 12) ^ hash_val[0]) & MASK;
+            uint64_t v = (static_cast<uint64_t>(i) << SHIFT) | mixed;
+            if (v < S[b]) {
+                S[b] = v;
+                if (!filled_bins[b]) {
+                    filled_bins[b] = true;
+                    filled_cnt++;
+                }
+            }
+        }
+        if (filled_cnt == sketch_size) break;
+    }
+    return S;
+}
+
+// Overload for byte-string inputs
+std::vector<uint64_t> FastSimilaritySketch::sketch(const std::vector<std::string>& items) {
+    constexpr uint64_t SHIFT = 52;
+    constexpr uint64_t MASK  = (uint64_t(1) << SHIFT) - 1;
+
+    std::vector<uint64_t> S(sketch_size, std::numeric_limits<uint64_t>::max());
+    std::vector<bool> filled_bins(sketch_size, false);
+    size_t filled_cnt = 0;
+
+    for (size_t i = 0; i < hash_seeds.size(); ++i) {
+        const uint64_t seed = hash_seeds[i];
+        for (const auto& bytes : items) {
+            uint64_t hash_val[2];
+            MurmurHash3_x64_128(bytes.data(), static_cast<int>(bytes.size()), static_cast<uint32_t>(seed), hash_val);
             size_t b = (i < sketch_size) ? (hash_val[0] % sketch_size) : (i - sketch_size);
             uint64_t mixed = ((hash_val[0] >> 12) ^ hash_val[0]) & MASK;
             uint64_t v = (static_cast<uint64_t>(i) << SHIFT) | mixed;

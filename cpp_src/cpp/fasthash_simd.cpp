@@ -24,34 +24,8 @@ inline __m512i pack_key_vec(uint64_t i, __m512i h52) {
     return _mm512_or_si512(hi, lo);
 }
 
-// 一次性预哈希：FNV-1a(64) 专门对字符串这种不定长的字节编码方式
-// TODO: Can we pick a SIMD friendly Hash method? Not fnv1a64? Please check and do some experiments. But the 
-inline uint64_t fnv1a64(const uint8_t* p, size_t n) {
-    const uint64_t OFF = 1469598103934665603ull;
-    const uint64_t PRM = 1099511628211ull;
-    uint64_t h = OFF;
-    for (size_t i = 0; i < n; ++i) { h ^= (uint64_t)p[i]; h *= PRM; }
-    return h;
-}
-
-// 现在输入是32位整数，写一个简单友好快速的hash方法
-inline uint64_t hash_int32(uint32_t x) {
-    // Use SplitMix64 mixing on the 32-bit input promoted to 64-bit.
-    // This provides good avalanche and pairs well with the later splitmix64(base ^ seed) stage.
-    uint64_t z = (uint64_t)x + 0x9E3779B97F4A7C15ull;
-    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-    z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-    z = z ^ (z >> 31);
-    return z;
-}
-
-// splitmix64（scalar）
-inline uint64_t splitmix64(uint64_t x){
-    x += 0x9E3779B97F4A7C15ull;
-    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
-    x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
-    return x ^ (x >> 31);
-}
+// Note: scalar hashing utilities are defined inline in the public header
+// (fnv1a64, hash_int32, splitmix64). We only keep the vectorized helpers here.
 
 // splitmix64（AVX-512, 8-lane for uint64）
 inline __m512i splitmix64_vec(__m512i x){

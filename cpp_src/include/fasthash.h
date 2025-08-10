@@ -15,4 +15,7 @@ public:
     FastSimilaritySketch(size_t sketch_size, uint32_t random_seed = 42);
 
     std::vector<uint64_t> sketch(const std::vector<int>& items);
+
+    // New overload: support hashing arbitrary byte strings (e.g., Python bytes/utf-8 encoded str)
+    std::vector<uint64_t> sketch(const std::vector<std::string>& items);
 };
