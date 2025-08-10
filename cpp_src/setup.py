@@ -9,12 +9,47 @@ try:
 except ImportError:
     pybind11_available = False
 
-# 跨平台编译选项
+# Cross-platform compile/link options
 compile_args = []
-if platform.system() == "Windows":
+link_args = []
+define_macros = [
+    ('USE_AVX2', '1'),
+    ('PYBIND11_STRICT_ASSERTS', '1'),
+]
+
+system_name = platform.system()
+
+if system_name == "Windows":
+    # MSVC flags
     compile_args = ["/arch:AVX2", "/std:c++17", "/fp:fast", "/Oi"]
-else:
-    compile_args = ["-mavx2", "-mbmi2", "-std=c++17", "-ffast-math", "-fvisibility=hidden"]
+elif system_name == "Darwin":
+    # macOS uses libc++ (do not try to static link libstdc++)
+    compile_args = [
+        "-mavx2",
+        "-mbmi2",
+        "-std=c++17",
+        "-ffast-math",
+        "-fvisibility=hidden",
+        "-stdlib=libc++",
+    ]
+    link_args.extend(["-stdlib=libc++"])
+else:  # Linux and others with libstdc++
+    # GCC/Clang flags
+    compile_args = [
+        "-mavx2",
+        "-mbmi2",
+        "-std=c++17",
+        "-ffast-math",
+        "-fvisibility=hidden",
+    ]
+
+    # Prefer old C++11 dual ABI for broad compatibility with older libstdc++
+    # This avoids requiring newer GLIBCXX_* symbols at runtime on target machines
+    define_macros.append(("_GLIBCXX_USE_CXX11_ABI", "0"))
+
+    # Statically link libstdc++/libgcc into the extension so target machines
+    # do not need matching libstdc++ versions installed
+    link_args.extend(["-static-libstdc++", "-static-libgcc"])
 
 ext_modules = []
 if pybind11_available:
@@ -32,10 +67,8 @@ if pybind11_available:
         include_dirs=['include', pybind11.get_include()],
         language='c++',
         extra_compile_args=compile_args,
-        define_macros=[
-            ('USE_AVX2', '1'),
-            ('PYBIND11_STRICT_ASSERTS', '1')
-        ],
+        extra_link_args=link_args,
+        define_macros=define_macros,
     ))
 
 setup(
