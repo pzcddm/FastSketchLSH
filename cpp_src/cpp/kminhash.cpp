@@ -1,5 +1,6 @@
 #include "../include/kminhash.h"
 #include <algorithm>
+#include <stdexcept>
 
 KMinSketch::KMinSketch(size_t k, uint32_t random_seed) : k_(k) {
     if (k <= 0) {

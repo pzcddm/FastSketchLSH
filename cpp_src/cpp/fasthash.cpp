@@ -1,5 +1,6 @@
 #include "../include/fasthash.h"
 #include "../include/murmurhash.h"
+#include <stdexcept>
 #ifdef DEMO_MAIN
 #include <iostream>
 #endif

@@ -14,7 +14,17 @@ compile_args = []
 if platform.system() == "Windows":
     compile_args = ["/arch:AVX2", "/std:c++17", "/fp:fast", "/Oi"]
 else:
-    compile_args = ["-mavx2", "-mbmi2", "-std=c++17", "-ffast-math", "-fvisibility=hidden"]
+    # 需要 AVX-512F/DQ/VL 支持以使用 fasthash_simd.cpp 中的 512 位指令与 64 位整数运算
+    compile_args = [
+        "-mavx2",
+        "-mbmi2",
+        "-mavx512f",
+        "-mavx512dq",
+        "-mavx512vl",
+        "-std=c++17",
+        "-ffast-math",
+        "-fvisibility=hidden",
+    ]
 
 ext_modules = []
 if pybind11_available:
