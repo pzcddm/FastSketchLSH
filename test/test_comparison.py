@@ -33,6 +33,7 @@ from src.datasketch_sketch import DatasketchMinHashSketch
 from src.cmins_rensa_sketch import CMinHashSketch
 from FastSketchLSH import FastSimilaritySketch
 from FastSketchLSH import FastSimilaritySketchSIMD
+from src.fast_sketch32 import FastSimilaritySketch32Bit
 
 from simulation.util import estimate_jaccard, actual_jaccard, generate_interval_sets_with_jaccard
 
@@ -100,8 +101,10 @@ class SketchComparison:
             true_jaccard = actual_jaccard(set_a, set_b)
 
             # Test FastSimilaritySketch
-            fast_sketcher = FastSimilaritySketchSIMD(sketch_size=k)
-
+            fast_sketcher = FastSimilaritySketch32Bit(sketch_size=k)
+            # fast_sketcher = FastSimilaritySketch(sketch_size=k)
+            # fast_sketcher = FastSimilaritySketchSIMD(sketch_size=k)
+            
             # Time sketch generation for set A and B
             time_a = self.time_sketch_generation(fast_sketcher, set_a)
             time_b = self.time_sketch_generation(fast_sketcher, set_b)

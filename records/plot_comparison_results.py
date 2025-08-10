@@ -8,9 +8,8 @@ two comprehensive figures showing execution time trends across different paramet
 1. Figure 1: Execution Time vs k (sketch size) with n=10000 fixed
 2. Figure 2: Execution Time vs n (set size) with k=128 fixed
 
-Each figure shows execution time performance for all four sketch methods:
+Each figure shows execution time performance for three sketch methods:
 - FastSimilaritySketch
-- KMinSketch  
 - DatasketchMinHashSketch
 - CMinHashSketch
 
@@ -18,7 +17,6 @@ Figures are saved as PNG files in the records directory, focusing on execution t
 
 Time Complexity Analysis:
 - FastSimilaritySketch: O(n + k log k) (expectation)
-- KMinSketch: O(k * n)
 - DatasketchMinHashSketch: O(k * n)
 - CMinHashSketch: O(k * n)
 
@@ -40,7 +38,7 @@ class ComparisonResultsPlotter:
     Visualizes performance comparison results across different sketch algorithms.
     """
     
-    def __init__(self, csv_filename: str = "sketch_comparison_results_with_cmins.csv"):
+    def __init__(self, csv_filename: str = "sketch_comparison_results_simd.csv"):
         """
         Initialize the plotter with CSV file path.
         
@@ -88,17 +86,15 @@ class ComparisonResultsPlotter:
         fig, ax = plt.subplots(1, 1, figsize=(12, 8))
         fig.suptitle(f'Sketch Algorithm Execution Time vs k (Set Size n={fixed_n})', fontsize=16, fontweight='bold')
         
-        # Define colors and markers for each algorithm
+        # Define colors and markers for each algorithm (KMin removed)
         colors = {
             'fast': '#2E86AB',      # Blue
-            'kmins': '#A23B72',     # Purple  
             'datasketch': '#F18F01', # Orange
             'cmins': '#C73E1D'      # Red
         }
         
         markers = {
             'fast': 'o',
-            'kmins': 's', 
             'datasketch': '^',
             'cmins': 'D'
         }
@@ -107,9 +103,7 @@ class ComparisonResultsPlotter:
         ax.plot(filtered_data['k'], filtered_data['fast_avg_time'], 
                color=colors['fast'], marker=markers['fast'], linewidth=3, markersize=8,
                label='FastSimilaritySketch', markeredgecolor='white', markeredgewidth=1)
-        ax.plot(filtered_data['k'], filtered_data['kmins_avg_time'], 
-               color=colors['kmins'], marker=markers['kmins'], linewidth=3, markersize=8,
-               label='KMinSketch', markeredgecolor='white', markeredgewidth=1)
+        # KMinSketch line removed
         ax.plot(filtered_data['k'], filtered_data['datasketch_avg_time'], 
                color=colors['datasketch'], marker=markers['datasketch'], linewidth=3, markersize=8,
                label='DatasketchMinHash', markeredgecolor='white', markeredgewidth=1)
@@ -153,17 +147,15 @@ class ComparisonResultsPlotter:
         fig, ax = plt.subplots(1, 1, figsize=(12, 8))
         fig.suptitle(f'Sketch Algorithm Execution Time vs n (Sketch Size k={fixed_k})', fontsize=16, fontweight='bold')
         
-        # Define colors and markers for each algorithm
+        # Define colors and markers for each algorithm (KMin removed)
         colors = {
             'fast': '#2E86AB',      # Blue
-            'kmins': '#A23B72',     # Purple  
             'datasketch': '#F18F01', # Orange
             'cmins': '#C73E1D'      # Red
         }
         
         markers = {
             'fast': 'o',
-            'kmins': 's', 
             'datasketch': '^',
             'cmins': 'D'
         }
@@ -172,9 +164,7 @@ class ComparisonResultsPlotter:
         ax.plot(filtered_data['n'], filtered_data['fast_avg_time'], 
                color=colors['fast'], marker=markers['fast'], linewidth=3, markersize=8,
                label='FastSimilaritySketch', markeredgecolor='white', markeredgewidth=1)
-        ax.plot(filtered_data['n'], filtered_data['kmins_avg_time'], 
-               color=colors['kmins'], marker=markers['kmins'], linewidth=3, markersize=8,
-               label='KMinSketch', markeredgecolor='white', markeredgewidth=1)
+        # KMinSketch line removed
         ax.plot(filtered_data['n'], filtered_data['datasketch_avg_time'], 
                color=colors['datasketch'], marker=markers['datasketch'], linewidth=3, markersize=8,
                label='DatasketchMinHash', markeredgecolor='white', markeredgewidth=1)
@@ -213,13 +203,13 @@ class ComparisonResultsPlotter:
         # Overall averages
         print(f"\nOverall Average Execution Times:")
         print(f"  FastSimilaritySketch: {self.results_df['fast_avg_time'].mean():.6f}s")
-        print(f"  KMinSketch:          {self.results_df['kmins_avg_time'].mean():.6f}s")
+        # KMinSketch removed
         print(f"  DatasketchMinHash:   {self.results_df['datasketch_avg_time'].mean():.6f}s")
         print(f"  CMinHashSketch:      {self.results_df['cmins_avg_time'].mean():.6f}s")
         
         print(f"\nOverall Average Estimation Errors:")
         print(f"  FastSimilaritySketch: {self.results_df['fast_avg_error'].mean():.6f}")
-        print(f"  KMinSketch:          {self.results_df['kmins_avg_error'].mean():.6f}")
+        # KMinSketch removed
         print(f"  DatasketchMinHash:   {self.results_df['datasketch_avg_error'].mean():.6f}")
         print(f"  CMinHashSketch:      {self.results_df['cmins_avg_error'].mean():.6f}")
         
