@@ -189,16 +189,9 @@ def run_lsh_benchmark(args):
     ds = load_dataset("pinecone/core-2020-05-10-deduplication")
     pinecone_ds = list(ds["train"])
     random.shuffle(pinecone_ds)
-    # dataset_limit = (
-    #     args.limit if args.limit and args.limit < len(pinecone_ds) else None
-    # )
-    # print(
-    #     f"Using {dataset_limit if dataset_limit else len(pinecone_ds)} rows for the benchmark."
-    # )
     take = max(1, int(args.ratio * len(pinecone_ds)))
     sample = pinecone_ds[:take]
     texts = [_extract_text(rec) for rec in sample]
-    # texts = [_extract_text(rec) for rec in pinecone_ds]
     token_build_start = time.perf_counter()
     token_sets = _build_token_sets(texts)
     token_build_time = time.perf_counter() - token_build_start
@@ -208,7 +201,6 @@ def run_lsh_benchmark(args):
     NUM_PERM = args.num_perm
     SEED = args.seed
     LSH_THRESHOLD = args.lsh_threshold
-    FINAL_JACCARD_THRESHOLD = args.final_jaccard_threshold #暂时没用上
 
     #先写死
     # Calculate optimal number of bands for fair comparison
@@ -306,44 +298,6 @@ def run_lsh_benchmark(args):
                 f"Datasketch LSH was {1 / overall_speedup:.2f}x faster overall than FastSketchLSH."
             )
 
-    #彭师兄统计信息：
-    # # 提取简单标记（用于比较）
-    # ds_flags_simple = [1 if i not in ds_res["kept_indices"] else 0 for i in range(len(token_sets))]
-    # fs_flags_simple = [1 if i not in fs_res["kept_indices"] else 0 for i in range(len(token_sets))]
-    #
-    # # 比较结果，计算两个序列之间的汉明距离和汉明差异率
-    # diffs, rate = _hamming_diff_rate(ds_flags_simple, fs_flags_simple)
-    #
-    # # 输出结果
-    # print(f"Total texts: {len(texts)}")
-    # print(f"bands: {bands}, rows: {rows}, threshold: {LSH_THRESHOLD}, num_perm: {num_perm}")
-    # print(f"datasketch duplicate count: {ds_res['removed_count']}")
-    # print(f"fastsketch duplicate count: {fs_res['removed_count']}")
-    # print(f"Hamming differences: {diffs}, rate: {rate:.4f}")
-    #
-    # # 输出时间信息
-    # print("\nDatasketch Timing (seconds):")
-    # print(f"  phase1 (MinHash): {ds_res['phase1_time']:.3f}")
-    # print(f"  phase2 (Insert): {ds_res['phase2_time']:.3f}")
-    # print(f"  phase3 (Query): {ds_res['phase3_time']:.3f}")
-    # print(f"  Total: {ds_res['total_time']:.3f}")
-    #
-    # print("\nFastSketch Timing (seconds):")
-    # print(f"  phase1 (Insert): {fs_res['phase1_time']:.3f}")
-    # print(f"  phase2 (Query): {fs_res['phase2_time']:.3f}")
-    # print(f"  Total: {fs_res['total_time']:.3f}")
-    #
-    # # 输出统计信息
-    # print("\nDatasketch Stats:")
-    # print(f"  Kept: {ds_res['kept_count']}, Removed: {ds_res['removed_count']}")
-    # print(f"  Total candidates: {ds_res['total_candidates']}")
-    # print(f"  Avg candidates/query: {ds_res['avg_candidates_per_query']:.2f}")
-    #
-    # print("\nFastSketch Stats:")
-    # print(f"  Kept: {fs_res['kept_count']}, Removed: {fs_res['removed_count']}")
-    # print(f"  Total candidates: {fs_res['total_candidates']}")
-    # print(f"  Avg candidates/query: {fs_res['avg_candidates_per_query']:.2f}")
-
     #rensa原作额外的统计信息：
     # # Phase-by-phase comparison
     # print("\nPhase-by-phase speedup (Datasketch time / Rensa time):")
@@ -382,6 +336,9 @@ if __name__ == "__main__":
     #     default=None,
     #     help="Limit the number of dataset rows to process for faster testing.",
     # )
+    # 使用的是jaccard，而不是hamming
+    # 使用了 LSH_t，暂无使用 FINAL_JACCARD_THRESHOLD
+    # 暂不支持用户自定义 NUM_BANDS
     parser.add_argument(
         "--num_perm", type=int, default=128, help="Number of permutations for MinHash."
     )
@@ -412,7 +369,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--ratio",
         type=float,
-        default=0.1,
+        default=1.0,
         help="Fraction of the dataset to use (0 < ratio <= 1). Default: 1.0 (full dataset).",
     )
     cli_args = parser.parse_args()
