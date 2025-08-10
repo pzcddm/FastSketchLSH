@@ -208,7 +208,7 @@ class SketchComparison:
                 print(f"  Speedup ratio (Datasketch/CMins): {result['datasketch_speedup_vs_cmins']:.2f}")
                 print()
 
-    def save_results_to_csv(self, filename: str = "sketch_comparison_results_simd.csv") -> None:
+    def save_results_to_csv(self, filename: str = "sketch_comparison_results.csv") -> None:
         """
         Save comparison results to a CSV file in the records directory.
         Args:
