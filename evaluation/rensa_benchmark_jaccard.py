@@ -165,6 +165,64 @@ def run_fastsketch_lsh(
         "removed_count": len(to_remove),
     }
 
+def run_rensa_lsh(
+        token_sets: List[List[str]],
+        threshold: float,
+        num_perm: int,
+        bands: int,
+        random_seed: int = 42,
+        final_jaccard_threshold: float = 0.8  # 添加最终Jaccard阈值参数
+) -> Dict[str, Any]:
+    from datasketch import MinHash, MinHashLSH
+    n = len(token_sets)
+
+    # Phase1: Build MinHash
+    start1 = time.perf_counter()
+    minhashes = []
+    for tokens in token_sets:
+        m = RMinHash(num_perm=num_perm,seed=random_seed)
+        m.update(tokens)
+        minhashes.append(m)
+    phase1_time = time.perf_counter() - start1
+
+    # Phase2: Insert LSH Index
+    start2 = time.perf_counter()
+    lsh = RMinHashLSH(threshold=threshold, num_perm=num_perm, num_bands=bands)
+    for idx, m in enumerate(minhashes):
+        lsh.insert(idx, m)
+    phase2_time = time.perf_counter() - start2
+
+    # Phase3: 查询并使用简化策略去重
+    start3 = time.perf_counter()
+    # 查询所有候选集并计算平均大小
+    candidate_sets = [lsh.query(m) for m in minhashes]
+
+    # 使用简化策略去重
+    to_remove = set()
+    for i in range(n):
+        candidates = candidate_sets[i]
+        # 过滤掉自身
+        other_candidates = [c for c in candidates if c != i]
+
+        if other_candidates:
+            # 移除策略：保留ID最小的文档
+            min_id = min([i] + other_candidates)
+            # 将组内除最小ID外的所有文档加入移除集合
+            to_remove.update([c for c in [i] + other_candidates if c != min_id])
+
+    kept_indices = set(range(n)) - to_remove
+    phase3_time = time.perf_counter() - start3
+
+    return {
+        "total_time": phase1_time + phase2_time + phase3_time,
+        "phase1_time": phase1_time,
+        "phase2_time": phase2_time,
+        "phase3_time": phase3_time,
+        "kept_indices": kept_indices,
+        "removed_count": len(to_remove),
+        "kept_count": len(kept_indices),
+    }
+
 def _extract_text(record: dict) -> str:
     """Best-effort extraction of text field from a dataset record."""
     for key in ("text", "content", "document", "body", "raw"):
@@ -222,7 +280,8 @@ def run_lsh_benchmark(args):
     ds_res = run_datasketch_lsh(token_sets, LSH_THRESHOLD, num_perm, bands, rows)
     # 运行FastSketch LSH
     fs_res = run_fastsketch_lsh(token_sets, LSH_THRESHOLD, num_perm, bands, SEED)
-
+    # 运行Rensa LSH
+    rs_res = run_rensa_lsh(token_sets, LSH_THRESHOLD, num_perm, bands, SEED)
 
     print("\nDatasketch MinHashLSH:")
     print(f"  Total Time: {ds_res['total_time']:.2f} seconds")
@@ -242,6 +301,16 @@ def run_lsh_benchmark(args):
     print(f"  Rows kept: {fs_res['kept_count']}")
     print(f"  Rows removed: {fs_res['removed_count']}")
 
+    print("\n" + "=" * 60)
+    print("Rensa BENCHMARK RESULTS")
+    print("\nRensaLSH:")
+    print(f"  Total Time: {rs_res['total_time']:.2f} seconds")
+    print(f"    - MinHash generation: {rs_res['phase1_time']:.2f}s")
+    print(f"    - LSH index building: {rs_res['phase2_time']:.2f}s")
+    print(f"    - Query & deduplication: {rs_res['phase3_time']:.2f}s")
+    print(f"  Rows kept: {rs_res['kept_count']}")
+    print(f"  Rows removed: {rs_res['removed_count']}")
+
     # Accuracy comparison
     intersection_kept = len(
         ds_res["kept_indices"].intersection(
@@ -254,31 +323,72 @@ def run_lsh_benchmark(args):
     jaccard_kept_sets = intersection_kept / union_kept if union_kept > 0 else 0.0
 
     print("\n" + "=" * 60)
-    print("ACCURACY COMPARISON (Jaccard of Kept Sets)")
+    print("ACCURACY COMPARISON : (Jaccard of Kept Sets)")
     print(
-        f"Jaccard similarity between FastSketchLSH and Datasketch kept sets: {jaccard_kept_sets:.4f}"
+        f"Jaccard similarity between FastSketch and Datasketch kept sets: {jaccard_kept_sets:.4f}"
     )
     print(f"  Intersection size: {intersection_kept}")
     print(f"  Union size: {union_kept}")
     print(
-        f"  FastSketchLSH kept: {fs_res['kept_count']}, "
+        f"  FastSketch kept: {fs_res['kept_count']}, "
         f"Datasketch kept: {ds_res['kept_count']}"
     )
 
+    intersection_kept1 = len(
+        rs_res["kept_indices"].intersection(
+            fs_res["kept_indices"]
+        )
+    )
+    union_kept1 = len(
+        rs_res["kept_indices"].union(fs_res["kept_indices"])
+    )
+    jaccard_kept_sets1 = intersection_kept1 / union_kept1 if union_kept1 > 0 else 0.0
+
+    print("\n" + "=" * 60)
+    print("ACCURACY COMPARISON : (Jaccard of Kept Sets)")
+    print(
+        f"Jaccard similarity between FastSketch and Rensa kept sets: {jaccard_kept_sets1:.4f}"
+    )
+    print(f"  Intersection size: {intersection_kept1}")
+    print(f"  Union size: {union_kept1}")
+    print(
+        f"  FastSketch kept: {fs_res['kept_count']}, "
+        f"Rensa kept: {rs_res['kept_count']}"
+    )
+
+
     # Check if results are identical
     if jaccard_kept_sets >= 0.99:
-        print("\n✓ Both algorithms produced NEARLY IDENTICAL deduplication results!")
+        print("\n✓ DataSketch and FastSketch produce NEARLY IDENTICAL deduplication results!")
     else:
-        print("\n✗ Algorithms produced DIFFERENT deduplication results.")
+        print("\n✗ DataSketch and FastSketch produce DIFFERENT deduplication results.")
         # Show some differences
-        FastSketchLSH_only = (
+        FastSketch_only = (
             fs_res["kept_indices"] - ds_res["kept_indices"]
         )
-        datasketch_only = (
+        Datasketch_only = (
             ds_res["kept_indices"] - fs_res["kept_indices"]
         )
-        print(f"  Documents kept only by FastSketchLSH: {len(FastSketchLSH_only)}")
-        print(f"  Documents kept only by Datasketch: {len(datasketch_only)}")
+        print(f"  Documents kept only by FastSketch: {len(FastSketch_only)}")
+        print(f"  Documents kept only by Datasketch: {len(Datasketch_only)}")
+
+    print("\n" + "=" * 60)
+    print("PERFORMANCE COMPARISON")
+    print("=" * 60)
+
+    if jaccard_kept_sets1 >= 0.99:
+        print("\n✓ Rensa and FastSketch produce NEARLY IDENTICAL deduplication results!")
+    else:
+        print("\n✗ v DIFFERENT deduplication results.")
+        # Show some differences
+        FastSketchLSH_only1 = (
+            fs_res["kept_indices"] - rs_res["kept_indices"]
+        )
+        Rensa_only1 = (
+            rs_res["kept_indices"] - fs_res["kept_indices"]
+        )
+        print(f"  Documents kept only by FastSketch: {len(FastSketchLSH_only1)}")
+        print(f"  Documents kept only by Rensa: {len(Rensa_only1)}")
 
     print("\n" + "=" * 60)
     print("PERFORMANCE COMPARISON")
@@ -298,33 +408,21 @@ def run_lsh_benchmark(args):
                 f"Datasketch LSH was {1 / overall_speedup:.2f}x faster overall than FastSketchLSH."
             )
 
-    #rensa原作额外的统计信息：
-    # # Phase-by-phase comparison
-    # print("\nPhase-by-phase speedup (Datasketch time / Rensa time):")
-    # phases = ["phase1_time", "phase2_time", "phase3_time"]
-    # phase_names = ["MinHash generation", "LSH index building", "Query & deduplication"]
-    #
-    # for phase, name in zip(phases, phase_names):
-    #     if rensa_lsh_results[phase] > 0:
-    #         speedup = datasketch_lsh_results[phase] / rensa_lsh_results[phase]
-    #         print(f"  {name}: {speedup:.2f}x")
-    #
-    # # Efficiency comparison
-    # print("\nEfficiency metrics:")
-    # print(
-    #     f"  Rensa average candidates per query: {rensa_lsh_results['avg_candidates_per_query']:.2f}"
-    # )
-    # print(
-    #     f"  Datasketch average candidates per query: {datasketch_lsh_results['avg_candidates_per_query']:.2f}"
-    # )
-    #
-    # if rensa_lsh_results["avg_candidates_per_query"] > 0:
-    #     candidate_ratio = (
-    #         datasketch_lsh_results["avg_candidates_per_query"]
-    #         / rensa_lsh_results["avg_candidates_per_query"]
-    #     )
-    #     print(f"  Candidate generation ratio: {candidate_ratio:.2f}x")
-
+    if rs_res["total_time"] > 0:
+        overall_speedup = (
+            rs_res["total_time"] / fs_res["total_time"]
+        )
+        if overall_speedup > 1:
+            print(
+                f"FastSketchLSH was {overall_speedup:.2f}x faster overall than RensaLSH."
+            )
+        else:
+            print(
+                f"RensaLSH was {1 / overall_speedup:.2f}x faster overall than FastSketchLSH."
+            )
+    #rensa原作额外支持的统计信息：
+    # Phase-by-phase comparison
+    # Efficiency comparison
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -369,7 +467,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--ratio",
         type=float,
-        default=1.0,
+        default=1,
         help="Fraction of the dataset to use (0 < ratio <= 1). Default: 1.0 (full dataset).",
     )
     cli_args = parser.parse_args()
