@@ -2,3 +2,4 @@ __pycache__
 cpp_src/build
 cpp_src/*-info/
 FastSketchLSH.cp311*
+.vscode/

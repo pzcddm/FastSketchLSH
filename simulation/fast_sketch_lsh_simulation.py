@@ -15,6 +15,8 @@ import numpy as np
 import sys
 import os
 from typing import Set, Tuple
+import matplotlib.pyplot as plt
+from math import comb as math_comb
 
 # Add src directory to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -22,9 +24,102 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 sys.path.append(os.path.join(os.path.dirname(__file__)))
 
 from src.fast_sketch_lsh import FastSketchLSH
-from util import generate_interval_sets_with_jaccard
+from src.fast_sketch import FastSimilaritySketch
+from util import generate_interval_sets_with_jaccard, estimate_jaccard
 
-def test_lsh_collision(set_A: Set[int], set_B: Set[int], bands: int, sketch_size: int, random_seed: int = 42) -> bool:
+# Make fonts bigger globally
+plt.rcParams.update({
+    'font.size': 16,
+    'axes.titlesize': 22,
+    'axes.labelsize': 18,
+    'xtick.labelsize': 14,
+    'ytick.labelsize': 14,
+    'legend.fontsize': 14,
+})
+
+def _ensure_figures_dir() -> str:
+    # Save figures in the same directory as this script
+    figures_dir = os.path.dirname(__file__)
+    os.makedirs(figures_dir, exist_ok=True)
+    return figures_dir
+
+def plot_lsh_curve(j_values: np.ndarray, collision_probs: np.ndarray, k: int, b: int, r: int) -> None:
+    figures_dir = _ensure_figures_dir()
+    plt.figure(figsize=(12, 8))
+    # Plot theoretical k-mins LSH curve: 1 - (1 - J^r)^b
+    x_dense = np.linspace(0.0, 1.0, 1000)
+    y_theory = 1.0 - (1.0 - x_dense**r)**b
+    plt.plot(x_dense, y_theory, linestyle='-', linewidth=2.5, color='red', label=f'k-mins LSH Theoretical (b={b}, r={r})')
+
+    # Plot FastSketch LSH simulated curve
+    plt.plot(j_values, collision_probs, marker='o', linestyle='-', linewidth=2.5, markersize=6, color='C0', label='FastSketch LSH (simulated)')
+    # Vertical line at J=0.7
+    plt.axvline(0.7, color='grey', linestyle='--', linewidth=2)
+    plt.xlim(0, 1)
+    plt.ylim(0, 1)
+    plt.xlabel('Jaccard(A,B) = J')
+    plt.ylabel('P(A and B in the same band)')
+    plt.title(f'k = {k}, b = {b}, r = {r}')
+    plt.grid(True, linestyle=':', alpha=0.6)
+    plt.legend(loc='lower right', frameon=False)
+    out_path = os.path.join(figures_dir, 'lsh_curve.png')
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=300)
+    plt.close()
+
+def _kmins_prob_curve(x: np.ndarray, k: int, theta: float) -> np.ndarray:
+    imin = int(np.ceil(theta * k))
+    # Precompute binomial coefficients
+    binom_coeffs = np.array([math_comb(k, i) for i in range(imin, k + 1)], dtype=float)
+    y = np.zeros_like(x)
+    # Sum_{i=imin..k} C(k,i) x^i (1-x)^{k-i}
+    for idx, i in enumerate(range(imin, k + 1)):
+        y += binom_coeffs[idx] * (x ** i) * ((1 - x) ** (k - i))
+    return y
+
+def plot_kmins_and_fastsketch_distribution(k_for_kmins: int, theta: float, t_fast: int, j_values: np.ndarray, set_size: int = 10000, random_seed: int = 52) -> None:
+    figures_dir = _ensure_figures_dir()
+    # k-mins theoretical curve over J
+    x = np.asarray(j_values)
+    y_kmins = _kmins_prob_curve(x, k_for_kmins, theta)
+
+    # FastSketch simulated acceptance probability: P(estimate >= theta)
+    sketcher = FastSimilaritySketch(sketch_size=t_fast, random_seed=random_seed)
+    y_fast = np.zeros_like(x, dtype=float)
+    for idx, J in enumerate(x):
+        if 0.37 <= J <= 0.9:
+            num_tests = 2000
+        else:
+            num_tests = 100
+        accept = 0
+        for test_idx in range(num_tests):
+            set_A, set_B, _ = generate_interval_sets_with_jaccard(J, set_size, start_id=test_idx * 10000 + idx * 1000000)
+            sketch_A = sketcher.sketch(set_A)
+            sketch_B = sketcher.sketch(set_B)
+            est = estimate_jaccard(sketch_A, sketch_B)
+            if est >= theta:
+                accept += 1
+        y_fast[idx] = accept / num_tests
+
+    # Plot both curves on the same axes
+    plt.figure(figsize=(12, 8))
+    plt.plot(x, y_kmins, color='C3', linewidth=2.5, label=f'k-mins Theoretical (k={k_for_kmins}, θ={theta:.2f})')
+    plt.plot(x, y_fast, 'o-', color='C0', linewidth=2.0, markersize=5, label=f'FastSketch Simulated (t={t_fast}, θ={theta:.2f})')
+    plt.xlim(0, 1)
+    plt.ylim(0, 1)
+    plt.xlabel('Jaccard(A,B) = J')
+    plt.ylabel('Probability')
+    plt.title('k-mins Theoretical vs FastSketch (Probability Curves)')
+    plt.grid(True, linestyle=':', alpha=0.6)
+    plt.legend(loc='lower right', frameon=False)
+    # Vertical line at J=theta
+    plt.axvline(theta, color='grey', linestyle='--', linewidth=2)
+    out_path = os.path.join(figures_dir, 'kmins_theory_and_fastsketch_distribution.png')
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=300)
+    plt.close()
+
+def test_lsh_collision(set_A: Set[int], set_B: Set[int], bands: int, sketch_size: int, random_seed: int = 1234) -> bool:
     """
     Test if two sets collide in at least one LSH band using FastSketch.
     
@@ -55,7 +150,7 @@ def simulate_lsh_curve(
     set_size: int, 
     bands: int, 
     sketch_size: int
-) -> (np.ndarray, np.ndarray):
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Simulate LSH collision probability for different Jaccard similarities.
     For Jaccard in [0.5, 0.9], use 500 tests; otherwise, use 100 tests.
@@ -77,8 +172,8 @@ def simulate_lsh_curve(
     num_tests_per_jaccard = np.zeros(len(jaccard_values), dtype=int)
     
     for i, target_jaccard in enumerate(jaccard_values):
-        # Use 500 tests for 0.5 <= Jaccard <= 0.9, else 100
-        if 0.4 <= target_jaccard <= 0.9:
+        # Use 500 tests for 0.37 <= Jaccard <= 0.9, else 100
+        if 0.37 <= target_jaccard <= 0.9:
             num_tests = 2000
         else:
             num_tests = 100
@@ -134,9 +229,31 @@ def main():
         'set_size': set_size
     }
     
-    output_file = "simulation/fast_sketch_lsh_results.npy"
+    # Save results in the same directory as this script
+    output_file = os.path.join(os.path.dirname(__file__), "fast_sketch_lsh_results.npy")
     np.save(output_file, results)
     print(f"\nResults saved to {output_file}")
+
+    # === Plot and save LSH figure ===
+    plot_lsh_curve(
+        j_values=jaccard_values,
+        collision_probs=collision_probs,
+        k=sketch_size,
+        b=bands,
+        r=rows_per_band,
+    )
+    print("LSH figure saved next to the script (lsh_curve.png)")
+
+    # === Plot and save k-mins theoretical + FastSketch distribution figure ===
+    plot_kmins_and_fastsketch_distribution(
+        k_for_kmins=sketch_size,
+        theta=0.70,
+        t_fast=sketch_size,
+        j_values=jaccard_values,
+        set_size=1000,
+        random_seed=52,
+    )
+    print("k-mins theory + FastSketch probability curves saved next to the script (kmins_theory_and_fastsketch_distribution.png)")
     
     # Print summary statistics
     print(f"\nSummary:")
