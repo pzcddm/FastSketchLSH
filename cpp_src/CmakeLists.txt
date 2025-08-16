@@ -14,6 +14,7 @@ endif()
 option(ENABLE_AVX2 "Enable AVX2 instructions" ON)
 option(ENABLE_SSE4 "Enable SSE4.2 instructions" ON)
 option(ENABLE_NEON "Enable ARM NEON instructions" OFF)
+option(ENABLE_AVX512 "Enable AVX-512 instructions (fasthash_simd.cpp)" ON)
 
 if(ENABLE_AVX2)
     add_definitions(-DUSE_AVX2)
@@ -22,11 +23,11 @@ if(ENABLE_SSE4)
     add_definitions(-DUSE_SSE)
 endif()
 
-# PyBind11集成
-find_package(pybind11 REQUIRED)
+# PyBind11集成（可选，用于Python模块）
+find_package(pybind11 QUIET)
 
-# 主库目标
-add_library(FastSketchLSH_core STATIC
+# 主库目标（核心源文件，不包含 AVX-512 TU）
+set(FASTSKETCH_CORE_SRCS
     cpp/cminhash.cpp
     cpp/kminhash.cpp
     cpp/rminhash.cpp
@@ -34,11 +35,31 @@ add_library(FastSketchLSH_core STATIC
     cpp/fasthash_simd.cpp
     cpp/murmurhash3.cpp
 )
+
+add_library(FastSketchLSH_core STATIC ${FASTSKETCH_CORE_SRCS})
 target_include_directories(FastSketchLSH_core PUBLIC include)
 
-# Python模块
-pybind11_add_module(FastSketchLSH cpp/init.cpp)
-target_link_libraries(FastSketchLSH PRIVATE FastSketchLSH_core pybind11::module)
+# 按需加入 AVX-512 源文件并设置按文件编译选项
+if(ENABLE_AVX512)
+    target_sources(FastSketchLSH_core PRIVATE cpp/fasthash_simd.cpp)
+    if(MSVC)
+        # 为 fasthash_simd.cpp 单独启用 /arch:AVX512
+        set_source_files_properties(cpp/fasthash_simd.cpp PROPERTIES COMPILE_OPTIONS "/arch:AVX512")
+    else()
+        # 仅对该 TU 启用 AVX-512 指令集
+        set_source_files_properties(cpp/fasthash_simd.cpp PROPERTIES COMPILE_OPTIONS "-mavx512f;-mavx512dq;-mavx512vl")
+    endif()
+else()
+    message(WARNING "ENABLE_AVX512=OFF; skipping cpp/fasthash_simd.cpp (SIMD sketch will be unavailable)")
+endif()
+
+# Python模块（若找到pybind11则构建，否则跳过）
+if(pybind11_FOUND)
+    pybind11_add_module(FastSketchLSH cpp/init.cpp)
+    target_link_libraries(FastSketchLSH PRIVATE FastSketchLSH_core pybind11::module)
+else()
+    message(WARNING "pybind11 not found; skipping Python module build (FastSketchLSH)")
+endif()
 
 # 安装配置
 install(TARGETS FastSketchLSH LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX})

@@ -32,7 +32,14 @@ void round1_block_avx512_no_reduce(
     const uint64_t* base_block, int nlanes,
     uint64_t round_i, uint64_t seed_i,
     uint64_t* S,
-    uint64_t t_mask);
+    uint64_t t_mask,
+    uint64_t* h_lane,
+    uint64_t* b_lane,
+    uint64_t* key_lane,
+    const __m512i& seedv,
+    const __m512i& maskv,
+    const __m512i& hiv,
+    const __m512i& h52maskv);
 
 // ===================== Inline definitions for benchmarking =====================
 // These are provided inline so that standalone benchmarks can use the same
@@ -91,6 +98,12 @@ struct FastSimilaritySketchAVX512Packed {
     std::vector<uint64_t> seeds;    // 2*t seeds
     // Persistent buffer to avoid reallocating prehash storage every call
     std::vector<uint64_t> base_buffer;
+    // Persistent buckets buffer to avoid per-call allocation; capacity up to 4096
+    std::vector<uint64_t> buckets_S;
+    // Preallocated lane buffers to avoid per-call stack arrays
+    alignas(64) uint64_t h_lane_buf[8];
+    alignas(64) uint64_t b_lane_buf[8];
+    alignas(64) uint64_t key_lane_buf[8];
 
     explicit FastSimilaritySketchAVX512Packed(int sketch_size, uint64_t random_seed=42);
     // Input changed to vector<uint32_t> for SIMD-friendly zero-extension
