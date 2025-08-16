@@ -143,9 +143,17 @@ FastSimilaritySketchAVX512Packed::FastSimilaritySketchAVX512Packed(int sketch_si
 }
 
 vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<int>& A) {
+    return sketch(A, nullptr, nullptr, nullptr);
+}
+
+vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<int>& A,
+                                                          double* prehash_ms,
+                                                          double* phase1_ms,
+                                                          double* phase2_ms) {
     const int n = (int)A.size();
 
     // 0) 预哈希（一次），避免 2t 次扫描长串
+    auto t0 = std::chrono::high_resolution_clock::now();
     vector<uint64_t> base(n);
     int j0 = 0;
     for (; j0 + 8 <= n; j0 += 8) {
@@ -154,10 +162,13 @@ vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<int>& A) 
     for (; j0 < n; ++j0) {
         base[j0] = hash_int32(static_cast<uint32_t>(A[j0]));
     }
+    auto t1 = std::chrono::high_resolution_clock::now();
+    if (prehash_ms) *prehash_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
     // 1) Buckets: one group (packed key)
     vector<uint64_t> S(t, INF_KEY());
     // ==================== 第 0 ~ t -1 轮：i=0..t-1 ====================
+    auto p1_start = std::chrono::high_resolution_clock::now();
     for (int i=0; i<t; ++i) {
         const uint64_t seed_i = seeds[i];
 
@@ -175,10 +186,13 @@ vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<int>& A) 
         // End of round: check whether all buckets are filled
         if (all_filled_avx512(S.data(), t)) break;
     }
+    auto p1_end = std::chrono::high_resolution_clock::now();
+    if (phase1_ms) *phase1_ms = std::chrono::duration<double, std::milli>(p1_end - p1_start).count();
 
     // ==================== 第 t ~ 2t -1 轮：i=t..2t-1，只补空桶 ====================
     // 因为 key 的高位是 i，i>=t 的 key 一定大于第 1 轮写入的 key，
     // 所以这里只会写原先空桶（S[b]==INF_KEY），不会覆盖已有桶。
+    auto p2_start = std::chrono::high_resolution_clock::now();
     if (!all_filled_avx512(S.data(), t)) {
         alignas(64) uint64_t h_lane[8];
 
@@ -214,6 +228,8 @@ vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<int>& A) 
         // All filled check (optional)
         (void)all_filled_avx512;
     }
+    auto p2_end = std::chrono::high_resolution_clock::now();
+    if (phase2_ms) *phase2_ms = std::chrono::duration<double, std::milli>(p2_end - p2_start).count();
     return S;
 }
 
@@ -252,27 +268,38 @@ int main(){
     double total_error = 0.0;
     double total_ms_A = 0.0;
     double total_ms_B = 0.0;
+    double total_prehash_A = 0.0, total_phase1_A = 0.0, total_phase2_A = 0.0;
+    double total_prehash_B = 0.0, total_phase1_B = 0.0, total_phase2_B = 0.0;
 
     for (int trial = 0; trial < trials; ++trial) {
         const uint64_t seed = dist(seed_rng);
         FastSimilaritySketchAVX512Packed sketcher(t, seed);
 
-        // Time sketch generation for A
+        // Time sketch generation for A and collect per-phase timings
+        double prehashA=0.0, phase1A=0.0, phase2A=0.0;
         auto t0 = std::chrono::high_resolution_clock::now();
-        auto S_A = sketcher.sketch(A);
+        auto S_A = sketcher.sketch(A, &prehashA, &phase1A, &phase2A);
         auto t1 = std::chrono::high_resolution_clock::now();
         double ms_A = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        total_prehash_A += prehashA; total_phase1_A += phase1A; total_phase2_A += phase2A;
 
-        // Time sketch generation for B
+        // Time sketch generation for B and collect per-phase timings
+        double prehashB=0.0, phase1B=0.0, phase2B=0.0;
         auto t2 = std::chrono::high_resolution_clock::now();
-        auto S_B = sketcher.sketch(B);
+        auto S_B = sketcher.sketch(B, &prehashB, &phase1B, &phase2B);
         auto t3 = std::chrono::high_resolution_clock::now();
         double ms_B = std::chrono::duration<double, std::milli>(t3 - t2).count();
+        total_prehash_B += prehashB; total_phase1_B += phase1B; total_phase2_B += phase2B;
 
         // Estimate Jaccard from sketches: fraction of equal entries
         int matches = 0;
         for (int i = 0; i < t; ++i) if (S_A[i] == S_B[i]) ++matches;
         double j_est = static_cast<double>(matches) / static_cast<double>(t);
+
+        std::cout << "trial " << (trial+1) << ": "
+                  << "A[prehash=" << prehashA << " ms, phase1=" << phase1A << " ms, phase2=" << phase2A << " ms], "
+                  << "B[prehash=" << prehashB << " ms, phase1=" << phase1B << " ms, phase2=" << phase2B << " ms], "
+                  << "estJ=" << j_est << "\n";
 
         total_error += std::abs(j_est - j_true);
         total_ms_A += ms_A;
@@ -282,10 +309,18 @@ int main(){
     const double mean_error = total_error / static_cast<double>(trials);
     const double mean_ms_A = total_ms_A / static_cast<double>(trials);
     const double mean_ms_B = total_ms_B / static_cast<double>(trials);
+    const double mean_prehash_A = total_prehash_A / static_cast<double>(trials);
+    const double mean_phase1_A  = total_phase1_A  / static_cast<double>(trials);
+    const double mean_phase2_A  = total_phase2_A  / static_cast<double>(trials);
+    const double mean_prehash_B = total_prehash_B / static_cast<double>(trials);
+    const double mean_phase1_B  = total_phase1_B  / static_cast<double>(trials);
+    const double mean_phase2_B  = total_phase2_B  / static_cast<double>(trials);
 
     std::cout << "|A| = " << A.size() << ", |B| = " << B.size() << "\n";
     std::cout << "Sketch size t = " << t << ", trials = " << trials << "\n";
     std::cout << "Mean time: A = " << mean_ms_A << " ms, B = " << mean_ms_B << " ms, total = " << (mean_ms_A + mean_ms_B) << " ms\n";
+    std::cout << "Mean phases A: prehash = " << mean_prehash_A << " ms, phase1 = " << mean_phase1_A << " ms, phase2 = " << mean_phase2_A << " ms\n";
+    std::cout << "Mean phases B: prehash = " << mean_prehash_B << " ms, phase1 = " << mean_phase1_B << " ms, phase2 = " << mean_phase2_B << " ms\n";
     std::cout << "True Jaccard: " << j_true << "\n";
     std::cout << "Mean absolute error over trials: " << mean_error << "\n";
     return 0;
