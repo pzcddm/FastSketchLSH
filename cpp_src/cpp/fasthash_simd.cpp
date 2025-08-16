@@ -14,6 +14,11 @@
 using namespace std;
 
 
+// Hoisted SplitMix64 constants (one-time broadcast at TU scope)
+static const __m512i SPLITMIX_C1 = _mm512_set1_epi64(0x9E3779B97F4A7C15ull);
+static const __m512i SPLITMIX_M1 = _mm512_set1_epi64(0xBF58476D1CE4E5B9ull);
+static const __m512i SPLITMIX_M2 = _mm512_set1_epi64(0x94D049BB133111EBull);
+
 inline uint64_t pack_key(uint64_t i, uint64_t h52) {
     return (i << I_SHIFT) | (h52 & H52_MASK);
 }
@@ -32,24 +37,19 @@ inline __m512i pack_key_vec(uint64_t i, __m512i h52) {
 
 // splitmix64（AVX-512, 8-lane for uint64）
 inline __m512i splitmix64_vec(__m512i x){
-    const __m512i C1 = _mm512_set1_epi64(0x9E3779B97F4A7C15ull);
-    const __m512i M1 = _mm512_set1_epi64(0xBF58476D1CE4E5B9ull);
-    const __m512i M2 = _mm512_set1_epi64(0x94D049BB133111EBull);
-    x = _mm512_add_epi64(x, C1);
+    x = _mm512_add_epi64(x, SPLITMIX_C1);
     __m512i t = _mm512_xor_si512(x, _mm512_srli_epi64(x, 30));
-    t = _mm512_mullo_epi64(t, M1);
+    t = _mm512_mullo_epi64(t, SPLITMIX_M1);
     t = _mm512_xor_si512(t, _mm512_srli_epi64(t, 27));
-    t = _mm512_mullo_epi64(t, M2);
+    t = _mm512_mullo_epi64(t, SPLITMIX_M2);
     t = _mm512_xor_si512(t, _mm512_srli_epi64(t, 31));
     return t;
 }
 
 // Hash 8 int32 values into 8 uint64 using SplitMix64-style mixing
-inline void hash_int32x8_to_u64_avx512(const int* src, uint64_t* dst) {
+inline void hash_int32x8_to_u64_avx512(const uint32_t* src, uint64_t* dst) {
     __m256i v32 = _mm256_loadu_si256((const __m256i*)src);
-    __m512i x64 = _mm512_cvtepi32_epi64(v32);                 // sign-extends
-    const __m512i mask32 = _mm512_set1_epi64(0xFFFFFFFFull);  // clear sign-extended high bits
-    x64 = _mm512_and_si512(x64, mask32);
+    __m512i x64 = _mm512_cvtepu32_epi64(v32);                 // zero-extends
     __m512i h = splitmix64_vec(x64);
     _mm512_storeu_si512((void*)dst, h);
 }
@@ -142,11 +142,11 @@ FastSimilaritySketchAVX512Packed::FastSimilaritySketchAVX512Packed(int sketch_si
         throw runtime_error("t can not be larger than 4096.");
 }
 
-vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<int>& A) {
+vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<uint32_t>& A) {
     return sketch(A, nullptr, nullptr, nullptr);
 }
 
-vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<int>& A,
+vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<uint32_t>& A,
                                                           double* prehash_ms,
                                                           double* phase1_ms,
                                                           double* phase2_ms) {
@@ -156,11 +156,16 @@ vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<int>& A,
     auto t0 = std::chrono::high_resolution_clock::now();
     vector<uint64_t> base(n);
     int j0 = 0;
+    // Unroll by 2x to create two independent SplitMix64 chains per iteration
+    for (; j0 + 16 <= n; j0 += 16) {
+        hash_int32x8_to_u64_avx512(&A[j0], &base[j0]);
+        hash_int32x8_to_u64_avx512(&A[j0 + 8], &base[j0 + 8]);
+    }
     for (; j0 + 8 <= n; j0 += 8) {
         hash_int32x8_to_u64_avx512(&A[j0], &base[j0]);
     }
     for (; j0 < n; ++j0) {
-        base[j0] = hash_int32(static_cast<uint32_t>(A[j0]));
+        base[j0] = hash_int32(A[j0]);
     }
     auto t1 = std::chrono::high_resolution_clock::now();
     if (prehash_ms) *prehash_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -174,6 +179,12 @@ vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<int>& A,
 
         int j = 0;
         // AVX-512 8 lanes for uint64
+        for (; j+16<=n; j+=16) {
+            round1_block_avx512_no_reduce(&base[j], 8, (uint64_t)i, seed_i,
+                                          S.data(), t_mask);
+            round1_block_avx512_no_reduce(&base[j+8], 8, (uint64_t)i, seed_i,
+                                          S.data(), t_mask);
+        }
         for (; j+8<=n; j+=8) {
             round1_block_avx512_no_reduce(&base[j], 8, (uint64_t)i, seed_i,
                                           S.data(), t_mask);
@@ -204,6 +215,19 @@ vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<int>& A,
             // 在所有元素上找 min_h（AVX-512 批处理 + 批内水平最小）
             uint64_t min_h = ~0ull;
             int j = 0;
+            for (; j+16<=n; j+=16) {
+                __m512i x0 = _mm512_loadu_si512((const void*)&base[j]);
+                __m512i x1 = _mm512_loadu_si512((const void*)&base[j+8]);
+                __m512i seedv = _mm512_set1_epi64((long long)seed_i);
+                x0 = _mm512_xor_si512(x0, seedv);
+                x1 = _mm512_xor_si512(x1, seedv);
+                __m512i h0 = splitmix64_vec(x0);
+                __m512i h1 = splitmix64_vec(x1);
+                uint64_t b0 = horizontal_min_epu64(h0);
+                uint64_t b1 = horizontal_min_epu64(h1);
+                uint64_t bmin = b0 < b1 ? b0 : b1;
+                if (bmin < min_h) min_h = bmin;
+            }
             for (; j+8<=n; j+=8) {
                 __m512i x = _mm512_loadu_si512((const void*)&base[j]);
                 x = _mm512_xor_si512(x, _mm512_set1_epi64((long long)seed_i));
@@ -242,10 +266,10 @@ int main(){
     // Generate two integer sets:
     // A = {0, 1, ..., 7499}
     // B = {2500, 2501, ..., 9999}
-    vector<int> A; A.reserve(7500);
-    for (int i = 0; i < 7500; ++i) A.push_back(i);
-    vector<int> B; B.reserve(7500);
-    for (int i = 2500; i < 10000; ++i) B.push_back(i);
+    vector<uint32_t> A; A.reserve(7500);
+    for (uint32_t i = 0; i < 7500u; ++i) A.push_back(i);
+    vector<uint32_t> B; B.reserve(7500);
+    for (uint32_t i = 2500u; i < 10000u; ++i) B.push_back(i);
 
     // Compute true Jaccard via two-pointer merge (both vectors are sorted)
     int inter = 0;

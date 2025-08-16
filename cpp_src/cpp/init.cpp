@@ -157,10 +157,10 @@ PYBIND11_MODULE(FastSketchLSH, m) {
           if (items.is_none() || py::len(items) == 0) {
               throw py::value_error("Items cannot be empty");
           }
-          std::vector<int> int_items;
+          std::vector<uint32_t> int_items;
           for (auto item : items) {
               try {
-                  int value = py::cast<int>(item);
+                  uint32_t value = py::cast<uint32_t>(item);
                   int_items.push_back(value);
               } catch (const py::cast_error&) {
                   throw py::value_error(

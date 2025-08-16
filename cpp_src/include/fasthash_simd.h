@@ -24,8 +24,8 @@ uint64_t fnv1a64(const uint8_t* p, size_t n);
 uint64_t hash_int32(uint32_t x);
 uint64_t splitmix64(uint64_t x);
 __m512i splitmix64_vec(__m512i x);
-  // Hash 8 int32 values into 8 uint64 using AVX-512 (declared for testing)
-  void hash_int32x8_to_u64_avx512(const int* src, uint64_t* dst);
+  // Hash 8 uint32 values into 8 uint64 using AVX-512 (declared for testing)
+  void hash_int32x8_to_u64_avx512(const uint32_t* src, uint64_t* dst);
 bool all_filled_avx512(const uint64_t* S, int t);
 void warm_cache(uint64_t* S, int t);
 void round1_block_avx512_no_reduce(
@@ -62,6 +62,7 @@ inline uint64_t splitmix64(uint64_t x){
 }
 
 #ifdef FASTHASH_SIMD_ENABLE_AVX512_INLINE
+// Use constants hoisted in the TU implementation when inlined is not needed.
 inline __m512i splitmix64_vec(__m512i x){
     const __m512i C1 = _mm512_set1_epi64(0x9E3779B97F4A7C15ull);
     const __m512i M1 = _mm512_set1_epi64(0xBF58476D1CE4E5B9ull);
@@ -75,11 +76,9 @@ inline __m512i splitmix64_vec(__m512i x){
     return t;
 }
 
-inline void hash_int32x8_to_u64_avx512(const int* src, uint64_t* dst) {
+inline void hash_int32x8_to_u64_avx512(const uint32_t* src, uint64_t* dst) {
     __m256i v32 = _mm256_loadu_si256((const __m256i*)src);
-    __m512i x64 = _mm512_cvtepi32_epi64(v32);                 // sign-extends
-    const __m512i mask32 = _mm512_set1_epi64(0xFFFFFFFFull);  // clear sign-extended high bits
-    x64 = _mm512_and_si512(x64, mask32);
+    __m512i x64 = _mm512_cvtepu32_epi64(v32);                 // zero-extends
     __m512i h = splitmix64_vec(x64);
     _mm512_storeu_si512((void*)dst, h);
 }
@@ -92,8 +91,13 @@ struct FastSimilaritySketchAVX512Packed {
     std::vector<uint64_t> seeds;    // 2*t seeds
 
     explicit FastSimilaritySketchAVX512Packed(int sketch_size, uint64_t random_seed=42);
-    // Input changed to vector<int> for better SIMD-friendly preprocessing
-    std::vector<uint64_t> sketch(const std::vector<int>& A);
+    // Input changed to vector<uint32_t> for SIMD-friendly zero-extension
+    std::vector<uint64_t> sketch(const std::vector<uint32_t>& A);
+    // Instrumented overload: returns per-phase timings (ms) if pointers are non-null
+    std::vector<uint64_t> sketch(const std::vector<uint32_t>& A,
+                                 double* prehash_ms,
+                                 double* phase1_ms,
+                                 double* phase2_ms);
 };
 
 #endif // FAST_SIMILARITY_SKETCH_AVX512_PACKED_H
