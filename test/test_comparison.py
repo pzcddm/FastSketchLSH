@@ -44,8 +44,10 @@ class SketchComparison:
     """
 
     def __init__(self):
-        self.k_values = [16, 32, 64, 128, 256, 512]
-        self.n_values = [100, 1250, 2500, 5000, 10000, 20000]
+        # self.k_values = [16, 32, 64, 128, 256, 512]
+        # self.n_values = [100, 1250, 2500, 5000, 10000, 20000]
+        self.k_values = [128]
+        self.n_values = [1000]
         self.results = []
 
     def generate_test_sets(self, n: int, overlap_ratio: float = 0.5, trial: int = 0) -> Tuple[set, set]:
@@ -101,9 +103,9 @@ class SketchComparison:
             true_jaccard = actual_jaccard(set_a, set_b)
 
             # Test FastSimilaritySketch
-            fast_sketcher = FastSimilaritySketch32Bit(sketch_size=k)
+            # fast_sketcher = FastSimilaritySketch32Bit(sketch_size=k)
             # fast_sketcher = FastSimilaritySketch(sketch_size=k)
-            # fast_sketcher = FastSimilaritySketchSIMD(sketch_size=k)
+            fast_sketcher = FastSimilaritySketchSIMD(sketch_size=k)
             
             # Time sketch generation for set A and B
             time_a = self.time_sketch_generation(fast_sketcher, set_a)

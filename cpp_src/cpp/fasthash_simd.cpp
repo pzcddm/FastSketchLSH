@@ -5,8 +5,11 @@
 #include <vector>
 #include <string>
 #include <random>
+#include <chrono>
 #ifdef DEMO_MAIN
 #include <iostream>
+#include <cmath>
+#include <limits>
 #endif
 using namespace std;
 
@@ -216,19 +219,75 @@ vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<int>& A) 
 
 // ===================== Demo =====================
 #ifdef DEMO_MAIN
+
+// To compile this file you can use this command to test it:
+// g++ -O3 -std=c++17 -mavx512f -mavx512dq -mavx512vl -DDEMO_MAIN cpp_src/cpp/fasthash_simd.cpp -Icpp_src/include -o demo_fasthash_simd.exe
 int main(){
-    vector<int> A;
-    A.reserve(5000);
-    for (int i=0;i<5000;i++){
-        A.push_back(i);
+    // Generate two integer sets:
+    // A = {0, 1, ..., 7499}
+    // B = {2500, 2501, ..., 9999}
+    vector<int> A; A.reserve(7500);
+    for (int i = 0; i < 7500; ++i) A.push_back(i);
+    vector<int> B; B.reserve(7500);
+    for (int i = 2500; i < 10000; ++i) B.push_back(i);
+
+    // Compute true Jaccard via two-pointer merge (both vectors are sorted)
+    int inter = 0;
+    size_t ia = 0, ib = 0;
+    while (ia < A.size() && ib < B.size()) {
+        if (A[ia] == B[ib]) { ++inter; ++ia; ++ib; }
+        else if (A[ia] < B[ib]) { ++ia; }
+        else { ++ib; }
+    }
+    const int uni = static_cast<int>(A.size() + B.size() - inter);
+    const double j_true = uni > 0 ? static_cast<double>(inter) / static_cast<double>(uni) : 0.0;
+
+    const int t = 256;      // sketch size (power of two, <= 4096)
+    const int trials = 50;  // number of repetitions with different random seeds
+
+    std::random_device rd;
+    std::mt19937_64 seed_rng(rd());
+    std::uniform_int_distribution<uint64_t> dist(0ull, std::numeric_limits<uint64_t>::max());
+
+    double total_error = 0.0;
+    double total_ms_A = 0.0;
+    double total_ms_B = 0.0;
+
+    for (int trial = 0; trial < trials; ++trial) {
+        const uint64_t seed = dist(seed_rng);
+        FastSimilaritySketchAVX512Packed sketcher(t, seed);
+
+        // Time sketch generation for A
+        auto t0 = std::chrono::high_resolution_clock::now();
+        auto S_A = sketcher.sketch(A);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        double ms_A = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+        // Time sketch generation for B
+        auto t2 = std::chrono::high_resolution_clock::now();
+        auto S_B = sketcher.sketch(B);
+        auto t3 = std::chrono::high_resolution_clock::now();
+        double ms_B = std::chrono::duration<double, std::milli>(t3 - t2).count();
+
+        // Estimate Jaccard from sketches: fraction of equal entries
+        int matches = 0;
+        for (int i = 0; i < t; ++i) if (S_A[i] == S_B[i]) ++matches;
+        double j_est = static_cast<double>(matches) / static_cast<double>(t);
+
+        total_error += std::abs(j_est - j_true);
+        total_ms_A += ms_A;
+        total_ms_B += ms_B;
     }
 
-    int t = 128; // 2 的幂：64/128/512 都 OK
-    FastSimilaritySketchAVX512Packed sk(t, 42);
-    auto v = sk.sketch(A);
+    const double mean_error = total_error / static_cast<double>(trials);
+    const double mean_ms_A = total_ms_A / static_cast<double>(trials);
+    const double mean_ms_B = total_ms_B / static_cast<double>(trials);
 
-    std::cout << "sketch size = " << v.size() << "\nfirst 8 hash values:\n";
-    for (int i=0;i<min(8,(int)v.size());++i) std::cout << v[i] << "\n";
+    std::cout << "|A| = " << A.size() << ", |B| = " << B.size() << "\n";
+    std::cout << "Sketch size t = " << t << ", trials = " << trials << "\n";
+    std::cout << "Mean time: A = " << mean_ms_A << " ms, B = " << mean_ms_B << " ms, total = " << (mean_ms_A + mean_ms_B) << " ms\n";
+    std::cout << "True Jaccard: " << j_true << "\n";
+    std::cout << "Mean absolute error over trials: " << mean_error << "\n";
     return 0;
 }
 #endif
