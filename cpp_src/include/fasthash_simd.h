@@ -89,6 +89,8 @@ struct FastSimilaritySketchAVX512Packed {
     int t;
     uint64_t t_mask;                // t-1 (t must be a power of two)
     std::vector<uint64_t> seeds;    // 2*t seeds
+    // Persistent buffer to avoid reallocating prehash storage every call
+    std::vector<uint64_t> base_buffer;
 
     explicit FastSimilaritySketchAVX512Packed(int sketch_size, uint64_t random_seed=42);
     // Input changed to vector<uint32_t> for SIMD-friendly zero-extension

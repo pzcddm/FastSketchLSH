@@ -140,6 +140,7 @@ FastSimilaritySketchAVX512Packed::FastSimilaritySketchAVX512Packed(int sketch_si
     for (int i=0;i<2*t;i++) seeds[i] = rng();
     if ((uint64_t)t > (1ull<<I_BITS))
         throw runtime_error("t can not be larger than 4096.");
+    base_buffer.reserve(16384); // initial enough capacity; grows as needed
 }
 
 vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<uint32_t>& A) {
@@ -154,18 +155,19 @@ vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<uint32_t>
 
     // 0) 预哈希（一次），避免 2t 次扫描长串
     auto t0 = std::chrono::high_resolution_clock::now();
-    vector<uint64_t> base(n);
+    if (base_buffer.size() < static_cast<size_t>(n)) base_buffer.resize(n);
+    uint64_t* base_ptr = base_buffer.data();
     int j0 = 0;
     // Unroll by 2x to create two independent SplitMix64 chains per iteration
     for (; j0 + 16 <= n; j0 += 16) {
-        hash_int32x8_to_u64_avx512(&A[j0], &base[j0]);
-        hash_int32x8_to_u64_avx512(&A[j0 + 8], &base[j0 + 8]);
+        hash_int32x8_to_u64_avx512(&A[j0], &base_ptr[j0]);
+        hash_int32x8_to_u64_avx512(&A[j0 + 8], &base_ptr[j0 + 8]);
     }
     for (; j0 + 8 <= n; j0 += 8) {
-        hash_int32x8_to_u64_avx512(&A[j0], &base[j0]);
+        hash_int32x8_to_u64_avx512(&A[j0], &base_ptr[j0]);
     }
     for (; j0 < n; ++j0) {
-        base[j0] = hash_int32(A[j0]);
+        base_ptr[j0] = hash_int32(A[j0]);
     }
     auto t1 = std::chrono::high_resolution_clock::now();
     if (prehash_ms) *prehash_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -180,17 +182,17 @@ vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<uint32_t>
         int j = 0;
         // AVX-512 8 lanes for uint64
         for (; j+16<=n; j+=16) {
-            round1_block_avx512_no_reduce(&base[j], 8, (uint64_t)i, seed_i,
+            round1_block_avx512_no_reduce(&base_ptr[j], 8, (uint64_t)i, seed_i,
                                           S.data(), t_mask);
-            round1_block_avx512_no_reduce(&base[j+8], 8, (uint64_t)i, seed_i,
+            round1_block_avx512_no_reduce(&base_ptr[j+8], 8, (uint64_t)i, seed_i,
                                           S.data(), t_mask);
         }
         for (; j+8<=n; j+=8) {
-            round1_block_avx512_no_reduce(&base[j], 8, (uint64_t)i, seed_i,
+            round1_block_avx512_no_reduce(&base_ptr[j], 8, (uint64_t)i, seed_i,
                                           S.data(), t_mask);
         }
         if (j < n) {
-            round1_block_avx512_no_reduce(&base[j], n-j, (uint64_t)i, seed_i,
+            round1_block_avx512_no_reduce(&base_ptr[j], n-j, (uint64_t)i, seed_i,
                                           S.data(), t_mask);
         }
 
@@ -216,8 +218,8 @@ vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<uint32_t>
             uint64_t min_h = ~0ull;
             int j = 0;
             for (; j+16<=n; j+=16) {
-                __m512i x0 = _mm512_loadu_si512((const void*)&base[j]);
-                __m512i x1 = _mm512_loadu_si512((const void*)&base[j+8]);
+                __m512i x0 = _mm512_loadu_si512((const void*)&base_ptr[j]);
+                __m512i x1 = _mm512_loadu_si512((const void*)&base_ptr[j+8]);
                 __m512i seedv = _mm512_set1_epi64((long long)seed_i);
                 x0 = _mm512_xor_si512(x0, seedv);
                 x1 = _mm512_xor_si512(x1, seedv);
@@ -229,14 +231,14 @@ vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<uint32_t>
                 if (bmin < min_h) min_h = bmin;
             }
             for (; j+8<=n; j+=8) {
-                __m512i x = _mm512_loadu_si512((const void*)&base[j]);
+                __m512i x = _mm512_loadu_si512((const void*)&base_ptr[j]);
                 x = _mm512_xor_si512(x, _mm512_set1_epi64((long long)seed_i));
                 __m512i h = splitmix64_vec(x);
                 uint64_t block_min = horizontal_min_epu64(h);
                 if (block_min < min_h) min_h = block_min;
             }
             for (; j<n; ++j) {
-                uint64_t h = splitmix64(base[j] ^ seed_i);
+                uint64_t h = splitmix64(base_ptr[j] ^ seed_i);
                 if (h < min_h) min_h = h;
             }
 
