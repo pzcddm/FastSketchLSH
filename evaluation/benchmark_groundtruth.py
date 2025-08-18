@@ -582,7 +582,7 @@ if __name__ == "__main__":
         help="Random seed."
     )
     parser.add_argument(
-        "--ratio", type=float, default=1.0,
+        "--ratio", type=float, default=0.1,
         help="Fraction of the dataset to use (0 < ratio <= 1)."
     )
     parser.add_argument(
