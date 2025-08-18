@@ -246,17 +246,17 @@ vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<uint32_t>
         // AVX-512 8 lanes for uint64 (使用优化版本)
         for (; j+16<=n; j+=16) {
             round1_block_avx512_optimized(&base_ptr[j], 8, (uint64_t)i, seed_i,
-                                          S.data(), t_mask);
+                                          buckets_S.data(), t_mask);
             round1_block_avx512_optimized(&base_ptr[j+8], 8, (uint64_t)i, seed_i,
-                                          S.data(), t_mask);
+                                          buckets_S.data(), t_mask);
         }
         for (; j+8<=n; j+=8) {
             round1_block_avx512_optimized(&base_ptr[j], 8, (uint64_t)i, seed_i,
-                                          S.data(), t_mask);
+                                          buckets_S.data(), t_mask);
         }
         if (j < n) {
             round1_block_avx512_optimized(&base_ptr[j], n-j, (uint64_t)i, seed_i,
-                                          S.data(), t_mask);
+                                          buckets_S.data(), t_mask);
         }
 
         // End of round: check whether all buckets are filled
