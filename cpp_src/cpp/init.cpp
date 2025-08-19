@@ -5,6 +5,7 @@
 #include "../include/rminhash.h"
 #include "../include/fasthash.h"
 #include "../include/fasthash_simd.h"
+#include "../include/fastsketch_lsh.h"
 
 namespace py = pybind11;
 
@@ -170,4 +171,90 @@ PYBIND11_MODULE(FastSketchLSH, m) {
           return self.sketch(int_items);
       }, py::arg("items"),
         "Compute MinHash signature for integer sets using FastSimilaritySketchSIMD algorithm");
+
+py::class_<FastSketchLSH>(m, "FastSketchLSH")
+      .def(py::init<float, size_t, size_t, uint32_t>(),
+            py::arg("threshold"),
+            py::arg("sketch_size"),
+            py::arg("bands"),
+            py::arg("random_seed") = 42,
+            "Initialize FastSketchLSH with:\n"
+            "  threshold: Jaccard similarity threshold (0 < threshold < 1)\n"
+            "  sketch_size: Length of sketch vector (must be divisible by bands)\n"
+            "  bands: Number of bands to split sketch into\n"
+            "  random_seed: Random seed (default=42)")
+      
+      .def("insert", [](FastSketchLSH& self, const std::string& key, py::iterable items) {
+          if (items.is_none() || py::len(items) == 0) {
+              throw py::value_error("Items cannot be empty");
+          }
+          
+          // 检查第一个元素的类型以确定使用哪个重载
+          auto first_item = *items.begin();
+          if (py::isinstance<py::str>(first_item) || py::isinstance<py::bytes>(first_item)) {
+              std::vector<std::string> str_items;
+              for (auto item : items) {
+                  if (py::isinstance<py::str>(item)) {
+                      str_items.push_back(py::cast<std::string>(item));
+                  } else if (py::isinstance<py::bytes>(item)) {
+                      str_items.push_back(py::cast<std::string>(item));
+                  } else {
+                      throw py::value_error("All items must be strings or bytes when first item is string-like");
+                  }
+              }
+              self.insert(key, str_items);
+          } else {
+              std::vector<int> int_items;
+              for (auto item : items) {
+                  try {
+                      int_items.push_back(py::cast<int>(item));
+                  } catch (const py::cast_error&) {
+                      throw py::value_error("All items must be integers when first item is not string-like");
+                  }
+              }
+              self.insert(key, int_items);
+          }
+      }, py::arg("key"), py::arg("items"),
+          "Insert a set with a key into LSH index\n"
+          "Automatically detects whether items are strings or integers")
+      
+      .def("query", [](FastSketchLSH& self, py::iterable items) {
+          if (items.is_none() || py::len(items) == 0) {
+              throw py::value_error("Items cannot be empty");
+          }
+          
+          // 检查第一个元素的类型以确定使用哪个重载
+          auto first_item = *items.begin();
+          if (py::isinstance<py::str>(first_item) || py::isinstance<py::bytes>(first_item)) {
+              std::vector<std::string> str_items;
+              for (auto item : items) {
+                  if (py::isinstance<py::str>(item)) {
+                      str_items.push_back(py::cast<std::string>(item));
+                  } else if (py::isinstance<py::bytes>(item)) {
+                      str_items.push_back(py::cast<std::string>(item));
+                  } else {
+                      throw py::value_error("All items must be strings or bytes when first item is string-like");
+                  }
+              }
+              return self.query(str_items);
+          } else {
+              std::vector<int> int_items;
+              for (auto item : items) {
+                  try {
+                      int_items.push_back(py::cast<int>(item));
+                  } catch (const py::cast_error&) {
+                      throw py::value_error("All items must be integers when first item is not string-like");
+                  }
+              }
+              return self.query(int_items);
+          }
+      }, py::arg("items"),
+          "Query LSH index for similar sets\n"
+          "Automatically detects whether items are strings or integers")
+      
+      .def("remove", &FastSketchLSH::remove, py::arg("key"),
+            "Remove a key from the LSH index")
+      
+      .def("clear", &FastSketchLSH::clear,
+            "Remove all keys from the LSH index");
 }

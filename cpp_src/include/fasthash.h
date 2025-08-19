@@ -1,3 +1,6 @@
+#ifndef FAST_SIMILARITY_SKETCH_H
+#define FAST_SIMILARITY_SKETCH_H
+
 #include <vector>
 #include <string>
 #include <limits>
@@ -19,3 +22,5 @@ public:
     // New overload: support hashing arbitrary byte strings (e.g., Python bytes/utf-8 encoded str)
     std::vector<uint64_t> sketch(const std::vector<std::string>& items);
 };
+
+#endif // FAST_SIMILARITY_SKETCH_H
