@@ -31,6 +31,7 @@ elif system_name == "Darwin":
         "-ffast-math",
         "-fvisibility=hidden",
         "-stdlib=libc++",
+        "-O3",
     ]
     link_args.extend(["-stdlib=libc++"])
 else:  # Linux and others with libstdc++
@@ -44,6 +45,7 @@ else:  # Linux and others with libstdc++
         "-std=c++17",
         "-ffast-math",
         "-fvisibility=hidden",
+        "-O3",
     ]
 
     # Prefer old C++11 dual ABI for broad compatibility with older libstdc++
