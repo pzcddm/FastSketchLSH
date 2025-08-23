@@ -22,17 +22,25 @@
 #endif
 using namespace std;
 
-
+// Backend selection: AVX-512 if available, else scalar fallback; define FORCE_SCALAR to disable SIMD
+#if defined(__AVX512F__) && !defined(FORCE_SCALAR)
+#define FASTHASH_SIMD_AVX512 1
+#else
+#define FASTHASH_SIMD_SCALAR 1
+#endif
 
 // Hoisted SplitMix64 constants (one-time broadcast at TU scope)
+#if defined(FASTHASH_SIMD_AVX512)
 static const __m512i SPLITMIX_C1 = _mm512_set1_epi64(0x9E3779B97F4A7C15ull);
 static const __m512i SPLITMIX_M1 = _mm512_set1_epi64(0xBF58476D1CE4E5B9ull);
 static const __m512i SPLITMIX_M2 = _mm512_set1_epi64(0x94D049BB133111EBull);
+#endif
 
 inline uint64_t pack_key(uint64_t i, uint64_t h52) {
     return (i << I_SHIFT) | (h52 & H52_MASK);
 }
 
+#if defined(FASTHASH_SIMD_AVX512)
 inline __m512i pack_key_vec(uint64_t i, __m512i h52) {
     // Broadcast i into a vector of 64-bit lanes and shift into top bits
     const __m512i vi = _mm512_set1_epi64((long long)i);
@@ -41,11 +49,13 @@ inline __m512i pack_key_vec(uint64_t i, __m512i h52) {
     const __m512i lo = _mm512_and_si512(h52, mask);
     return _mm512_or_si512(hi, lo);
 }
+#endif
 
 // Note: scalar hashing utilities are defined inline in the public header
 // (fnv1a64, hash_int32, splitmix64). We only keep the vectorized helpers here.
 
 // splitmix64（AVX-512, 8-lane for uint64）
+#if defined(FASTHASH_SIMD_AVX512)
 inline __m512i splitmix64_vec(__m512i x){
     x = _mm512_add_epi64(x, SPLITMIX_C1);
     __m512i t = _mm512_xor_si512(x, _mm512_srli_epi64(x, 30));
@@ -55,8 +65,10 @@ inline __m512i splitmix64_vec(__m512i x){
     t = _mm512_xor_si512(t, _mm512_srli_epi64(t, 31));
     return t;
 }
+#endif
 
 // Horizontal min for 8 lanes of unsigned 64-bit using two shuffles + min
+#if defined(FASTHASH_SIMD_AVX512)
 inline uint64_t hmin_epu64_8(__m512i v) {
     __m512i t = _mm512_shuffle_i64x2(v, v, 0x4E);
     v = _mm512_min_epu64(v, t);
@@ -64,17 +76,23 @@ inline uint64_t hmin_epu64_8(__m512i v) {
     v = _mm512_min_epu64(v, t);
     return (uint64_t)_mm_cvtsi128_si64(_mm512_castsi512_si128(v));
 }
+#endif
 
 // Hash 8 int32 values into 8 uint64 using SplitMix64-style mixing
 inline void hash_int32x8_to_u64_avx512(const uint32_t* src, uint64_t* dst) {
+#if defined(FASTHASH_SIMD_AVX512)
     __m256i v32 = _mm256_loadu_si256((const __m256i*)src);
     __m512i x64 = _mm512_cvtepu32_epi64(v32);                 // zero-extends
     __m512i h = splitmix64_vec(x64);
     _mm512_storeu_si512((void*)dst, h);
+#else
+    for (int i = 0; i < 8; ++i) dst[i] = splitmix64((uint64_t)src[i]);
+#endif
 }
 
 // SIMD check: whether all buckets in S are filled (i.e., not INF_KEY)
 inline bool all_filled_avx512(const uint64_t* S, int t) {
+#if defined(FASTHASH_SIMD_AVX512)
     int i = 0;
     const __m512i inf = _mm512_set1_epi64((long long)INF_KEY());
     for (; i + 8 <= t; i += 8) {
@@ -87,10 +105,15 @@ inline bool all_filled_avx512(const uint64_t* S, int t) {
         if (S[i] == INF_KEY()) return false;
     }
     return true;
+#else
+    for (int i = 0; i < t; ++i) if (S[i] == INF_KEY()) return false;
+    return true;
+#endif
 }
 
 // ===================== 向量化桶更新函数 =====================
 // 使用 AVX-512 gather/scatter 指令，减少内存访问
+#if defined(FASTHASH_SIMD_AVX512)
 inline void update_buckets_vectorized(__m512i keys, __m512i buckets, uint64_t* S) {
     // 使用 gather 指令加载当前S值，避免多次内存访问
     __m512i current_S = _mm512_i64gather_epi64(buckets, S, 8);
@@ -103,9 +126,11 @@ inline void update_buckets_vectorized(__m512i keys, __m512i buckets, uint64_t* S
         _mm512_mask_i64scatter_epi64(S, mask, buckets, keys, 8);
     }
 }
+#endif
 
 // ===================== 第 1 轮：AVX-512 批算 + 向量化更新（优化版本） =====================
 // 优化说明：减少内存搬移，使用寄存器操作，向量化桶更新
+#if defined(FASTHASH_SIMD_AVX512)
 inline void round1_block_avx512_optimized(
     const uint64_t* base_block, int nlanes,
     uint64_t round_i, uint64_t seed_i,
@@ -143,9 +168,26 @@ inline void round1_block_avx512_optimized(
         }
     }
 }
+#endif
+
+// Scalar fallback for round1 block processing
+inline void round1_block_fallback(
+    const uint64_t* base_block, int nlanes,
+    uint64_t round_i, uint64_t seed_i,
+    uint64_t* S,
+    uint64_t t_mask)
+{
+    for (int k = 0; k < nlanes; ++k) {
+        uint64_t h = splitmix64(base_block[k] ^ seed_i);
+        uint64_t b = h & t_mask;
+        uint64_t key = pack_key(round_i, h);
+        if (key < S[b]) S[b] = key;
+    }
+}
 
 // ===================== 第 1 轮：AVX-512 批算 + 逐 lane 更新 =====================
 // 说明：不做批内 reduce-by-bucket；对每个 lane 顺序：读 S[b] → 比较 → 写 S[b]。
+#if defined(FASTHASH_SIMD_AVX512)
 inline void round1_block_avx512_no_reduce(
     const uint64_t* base_block, int nlanes,
     uint64_t round_i, uint64_t seed_i,
@@ -191,6 +233,7 @@ inline void round1_block_avx512_no_reduce(
         }
     }
 }
+#endif
 
 // ===================== 主类：2t 轮（packed key 版本） =====================
 
@@ -235,15 +278,21 @@ vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<uint32_t>
     // ==================== 第 0 ~ t -1 轮：i=0..t-1 ====================
     // when A.size() is larger than 600 (if t is almost 128), usually i = 0 the buckets are all filled.
     auto p1_start = std::chrono::high_resolution_clock::now();
+    
+#if defined(FASTHASH_SIMD_AVX512)
     const __m512i maskv = _mm512_set1_epi64((long long)t_mask);
     const __m512i h52maskv = _mm512_set1_epi64((long long)H52_MASK);
+#endif
     for (int i=0; i<t; ++i) {
         const uint64_t seed_i = seeds[i];
+#if defined(FASTHASH_SIMD_AVX512)
         const __m512i seedv = _mm512_set1_epi64((long long)seed_i);
         const __m512i hiv = _mm512_set1_epi64((long long)((uint64_t)i << I_SHIFT));
+#endif
 
         int j = 0;
-        // AVX-512 8 lanes for uint64 (使用优化版本)
+        // Process blocks with SIMD if available, otherwise scalar
+#if defined(FASTHASH_SIMD_AVX512)
         for (; j+16<=n; j+=16) {
             round1_block_avx512_optimized(&base_ptr[j], 8, (uint64_t)i, seed_i,
                                           buckets_S.data(), t_mask);
@@ -258,6 +307,18 @@ vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<uint32_t>
             round1_block_avx512_optimized(&base_ptr[j], n-j, (uint64_t)i, seed_i,
                                           buckets_S.data(), t_mask);
         }
+#else
+        for (; j+16<=n; j+=16) {
+            round1_block_fallback(&base_ptr[j], 8, (uint64_t)i, seed_i, buckets_S.data(), t_mask);
+            round1_block_fallback(&base_ptr[j+8], 8, (uint64_t)i, seed_i, buckets_S.data(), t_mask);
+        }
+        for (; j+8<=n; j+=8) {
+            round1_block_fallback(&base_ptr[j], 8, (uint64_t)i, seed_i, buckets_S.data(), t_mask);
+        }
+        if (j < n) {
+            round1_block_fallback(&base_ptr[j], n-j, (uint64_t)i, seed_i, buckets_S.data(), t_mask);
+        }
+#endif
 
         // End of round: check whether all buckets are filled
         if (all_filled_avx512(buckets_S.data(), t)) break;
@@ -277,9 +338,10 @@ vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<uint32_t>
             if (buckets_S[b] != INF_KEY()) continue; // Already filled bucket
             const uint64_t seed_i = seeds[i];
 
-            // 在所有元素上找 min_h（AVX-512 批处理 + 批内水平最小）
+            // 在所有元素上找 min_h
             uint64_t min_h = ~0ull;
             int j = 0;
+#if defined(FASTHASH_SIMD_AVX512)
             for (; j+8<=n; j+=8) {
                 __m512i x = _mm512_loadu_si512((const void*)&base_ptr[j]);
                 x = _mm512_xor_si512(x, _mm512_set1_epi64((long long)seed_i));
@@ -287,6 +349,7 @@ vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<uint32_t>
                 uint64_t block_min = hmin_epu64_8(h);
                 if (block_min < min_h) min_h = block_min;
             }
+#endif
             for (; j<n; ++j) {
                 uint64_t h = splitmix64(base_ptr[j] ^ seed_i);
                 if (h < min_h) min_h = h;
