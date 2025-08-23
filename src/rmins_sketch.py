@@ -1,41 +1,62 @@
 """
-rmin_sketch.py
----------------
+RMinHash Sketch Implementation using Rensa Package
 
+This module provides a wrapper around the high-performance Rensa RMinHash implementation
+to match the interface of the existing sketch classes. Rensa is a Rust-based MinHash
+library with Python bindings that offers significant performance improvements over
+traditional implementations.
 
-Author: (your name)
-Date: (today's date)
+The wrapper maintains compatibility with the simple `sketch(items)` interface while
+leveraging Rensa's optimized R-MinHash algorithm for fast similarity estimation
+and deduplication.
 """
 
-import numpy as np
-import mmh3
 from typing import List, Iterable
-
-
-def _permute_hash(h: int, a: int, b: int) -> np.uint32:
-    """Simulate permutation hashing: compute the upper 32 bits of (a * h + b) mod 2^64."""
-    return np.uint32(((a * h + b) % (2**64)) >> 32)
+from rensa import RMinHash
 
 
 class RMinHashSketch:
-    def __init__(self, num_perm: int = 128, random_seed: int = 42):
+    """
+    R-MinHash sketch implementation using the high-performance Rensa package.
+
+    This class wraps Rensa's `RMinHash` to keep a minimal, consistent interface:
+    initialize with `num_perm` and `seed`, and call `sketch(items)` to obtain the
+    signature. Items are converted to strings before hashing.
+
+    Time Complexity: O(n * k) where n is number of items, k is number of permutations
+    Space Complexity: O(k) for storing the sketch signature
+    """
+
+    def __init__(self, num_perm: int = 128, seed: int = 42):
+        """
+        Initialize the RMinHashSketch with specified parameters.
+
+        Args:
+            num_perm: Number of permutations (hash functions) to use. Higher values
+                      improve accuracy at higher computational cost. Default: 128.
+            seed: Random seed for reproducible hash functions. Default: 42.
+        """
         self.num_perm = num_perm
-        self.random_seed = random_seed
-        np.random.seed(random_seed)
-        self.perm_pairs = [
-            (np.random.randint(1, 2**64) | 1, np.random.randint(0, 2**64))
-            for _ in range(num_perm)
-        ]
-        self.hash_values = np.full(num_perm, np.iinfo(np.uint32).max, dtype=np.uint32)
+        self.seed = seed
 
     def sketch(self, items: Iterable) -> List[int]:
-        self.hash_values.fill(np.iinfo(np.uint32).max)
-        for item in items:
-            element_str = str(item).encode('utf-8')
-            hash_val = mmh3.hash64(element_str, signed=False)[0]
-            for j in range(self.num_perm):
-                a, b = self.perm_pairs[j]
-                self.hash_values[j] = np.minimum(self.hash_values[j], _permute_hash(hash_val, a, b))
-        return self.hash_values.tolist()
+        """
+        Generate an R-MinHash sketch from the given items.
 
+        Args:
+            items: Iterable of items to sketch. Items will be converted to strings.
 
+        Returns:
+            List[int]: The R-MinHash signature as a list of integers of length `num_perm`.
+
+        Time Complexity: O(n * k) where n = len(items), k = num_perm
+        Space Complexity: O(k) for the output signature
+        """
+        hasher = RMinHash(num_perm=self.num_perm, seed=self.seed)
+
+        item_list = [str(item) for item in items]
+        if item_list:
+            hasher.update(item_list)
+
+        signature = hasher.digest()
+        return [int(val) for val in signature]

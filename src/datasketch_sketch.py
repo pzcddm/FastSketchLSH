@@ -4,9 +4,6 @@ datasketch_sketch.py
 Implementation of MinHash sketching using the datasketch library for Jaccard similarity estimation.
 
 Provides the DatasketchMinHashSketch class for generating minhash signatures using datasketch.MinHash.
-
-Author: (your name)
-Date: (today's date)
 """
 from datasketch import MinHash
 from typing import Iterable, List

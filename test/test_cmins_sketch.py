@@ -3,7 +3,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 
 # from src.cmins_sketch import CMinHashSketch
-from src.cmins_rensa_sketch import CMinHashSketch
+from src.cmins_sketch import CMinHashSketch
 from simulation.util import estimate_jaccard, actual_jaccard
 
 

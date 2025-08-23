@@ -5,6 +5,10 @@ Implementation of the Fast Similarity Sketch algorithm (from 'Fast Similarity Sk
 
 Provides the FastSimilaritySketch class for generating similarity sketches in pure python.
 
+Please note that it is a direct and simple way to show the idea of the Fast Similarity Sketch.
+
+If you want to use the Fast Similarity Sketch in a production environment, please install our C++ implementation with pip instead.
+
 Author: Zhencan Peng
 Date: 2025-08-23
 """
