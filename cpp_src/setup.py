@@ -62,7 +62,6 @@ if pybind11_available:
             'cpp/cminhash.cpp',
             "cpp/kminhash.cpp",
             "cpp/rminhash.cpp",
-            "cpp/fasthash.cpp",
             "cpp/fasthash_simd.cpp",
             'cpp/murmurhash3.cpp',
             'cpp/fastsketch_lsh.cpp',
