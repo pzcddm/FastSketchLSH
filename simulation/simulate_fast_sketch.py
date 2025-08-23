@@ -15,25 +15,25 @@ from src.fast_sketch import FastSimilaritySketch
 RANDOM_SEED = 52
 NUMPY_SEED = 52
 
-# 添加这两行来解决中文显示和负号显示问题
-plt.rcParams['font.sans-serif'] = ['SimHei']  # 指定默认字体为黑体
-plt.rcParams['axes.unicode_minus'] = False  # 解决保存图像是负号'-'显示为方块的问题
+# Add these lines to handle Chinese fonts and minus sign rendering
+plt.rcParams['font.sans-serif'] = ['SimHei']  # Use SimHei as default font
+plt.rcParams['axes.unicode_minus'] = False    # Ensure minus '-' renders correctly
 
 # Remove the FastSimilaritySketch class definition from this file
 
-# --- 模拟主程序 ---
+# --- Main simulation ---
 if __name__ == '__main__':
     # Set seeds for reproducibility
     np.random.seed(NUMPY_SEED)
     random.seed(RANDOM_SEED)
     
-    # --- 模拟参数 ---
+    # --- Simulation parameters ---
     sketch_size_t = 256
-    num_simulations = 400  # 模拟次数，越多曲线越平滑
+    num_simulations = 400  # Number of simulations; more yields smoother curves
     target_jaccard = 0.5    # Target Jaccard similarity
 
-    print(f"开始模拟 {num_simulations} 次...")
-    print(f"目标 Jaccard 值: {target_jaccard:.4f}")
+    print(f"Starting simulation for {num_simulations} runs...")
+    print(f"Target Jaccard: {target_jaccard:.4f}")
 
     # Create one sketcher instance with fixed seed for reproducibility
     sketcher = FastSimilaritySketch(sketch_size=sketch_size_t, random_seed=RANDOM_SEED)
@@ -43,7 +43,7 @@ if __name__ == '__main__':
     
     for i in range(num_simulations):
         if (i + 1) % 100 == 0:
-            print(f"  ...已完成 {i+1}/{num_simulations} 次模拟")
+            print(f"  ...completed {i+1}/{num_simulations} simulations")
         # Use interval-based set generation for reproducibility and efficiency
         set_A, set_B, actual_j = generate_interval_sets_with_jaccard(
             target_jaccard=target_jaccard,
@@ -57,23 +57,23 @@ if __name__ == '__main__':
         actual_jaccards.append(actual_j)
     
     avg_actual_jaccard = np.mean(actual_jaccards)
-    print(f"平均实际 Jaccard 值: {avg_actual_jaccard:.4f}")
+    print(f"Mean actual Jaccard: {avg_actual_jaccard:.4f}")
     print("mean, var:", np.mean(results), np.var(results, ddof=1))
     print("theoretical var:", avg_actual_jaccard*(1-avg_actual_jaccard)/sketch_size_t)
-    print("模拟完成。")
+    print("Simulation complete.")
 
-    # --- 绘制概率分布直方图 ---
+    # --- Plot probability distribution histogram ---
     plt.figure(figsize=(12, 6))
-    # 'density=True' 会将Y轴归一化为概率密度
-    plt.hist(results, bins=50, density=True, alpha=0.75, label=f'模拟分布 (t={sketch_size_t})')
+    # 'density=True' normalizes the Y-axis to probability density
+    plt.hist(results, bins=50, density=True, alpha=0.75, label=f'Simulation distribution (t={sketch_size_t})')
     
-    # 画出平均真实的 Jaccard 值作为参考
-    plt.axvline(avg_actual_jaccard, color='r', linestyle='--', linewidth=2, label=f'平均真实 Jaccard 值 = {avg_actual_jaccard:.3f}')
+    # Plot the mean actual Jaccard as a reference
+    plt.axvline(avg_actual_jaccard, color='r', linestyle='--', linewidth=2, label=f'Mean actual Jaccard = {avg_actual_jaccard:.3f}')
     
-    plt.title('FastSketch 估计值的概率分布 (模拟)')
-    plt.xlabel('估计的 Jaccard 相似度')
+    plt.title('Probability Distribution of FastSketch Estimates (Simulation)')
+    plt.xlabel('Estimated Jaccard Similarity')
     plt.xlim(avg_actual_jaccard-0.1, avg_actual_jaccard+0.1)
-    plt.ylabel('概率密度')
+    plt.ylabel('Probability Density')
     plt.legend()
     plt.grid(True, alpha=0.5)
     
@@ -88,7 +88,7 @@ if __name__ == '__main__':
     
     plt.show()
 
-    # 报告 P(估计值 > 0.4)
+    # Report P(estimate > 0.4)
     results_array = np.array(results)
     prob_greater_than_0_4 = np.sum(results_array > 0.4) / num_simulations
-    print(f"\n根据模拟，估计值 > 0.4 的概率约为: {prob_greater_than_0_4:.6f}")
+    print(f"\nFrom simulation, P(estimate > 0.4) ≈ {prob_greater_than_0_4:.6f}")

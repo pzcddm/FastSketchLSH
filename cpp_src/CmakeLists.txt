@@ -1,7 +1,7 @@
-cmake_minimum_required(VERSION 3.16)  # 提升最低版本要求以支持现代特性
+cmake_minimum_required(VERSION 3.16)  # Raise minimum version to support modern features
 project(FastSketchLSH LANGUAGES CXX)
 
-# 跨平台编译选项
+# Cross-platform compile options
 if(MSVC)
     add_compile_options(/arch:AVX2 /std:c++17 /fp:fast)
     add_definitions(-D_USE_MATH_DEFINES -DNOMINMAX)
@@ -10,7 +10,7 @@ else()
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 endif()
 
-# 动态检测SIMD指令集
+# Dynamic detection of SIMD instruction sets
 option(ENABLE_AVX2 "Enable AVX2 instructions" ON)
 option(ENABLE_SSE4 "Enable SSE4.2 instructions" ON)
 option(ENABLE_NEON "Enable ARM NEON instructions" OFF)
@@ -23,10 +23,10 @@ if(ENABLE_SSE4)
     add_definitions(-DUSE_SSE)
 endif()
 
-# PyBind11集成（可选，用于Python模块）
+# PyBind11 integration (optional, for Python module)
 find_package(pybind11 QUIET)
 
-# 主库目标（核心源文件，不包含 AVX-512 TU）
+# Core library target (core sources, excluding a separate AVX-512 TU)
 set(FASTSKETCH_CORE_SRCS
     cpp/cminhash.cpp
     cpp/kminhash.cpp
@@ -40,21 +40,21 @@ set(FASTSKETCH_CORE_SRCS
 add_library(FastSketchLSH_core STATIC ${FASTSKETCH_CORE_SRCS})
 target_include_directories(FastSketchLSH_core PUBLIC include)
 
-# 按需加入 AVX-512 源文件并设置按文件编译选项
+# Add AVX-512 source on demand and set per-file compile options
 if(ENABLE_AVX512)
     target_sources(FastSketchLSH_core PRIVATE cpp/fasthash_simd.cpp)
     if(MSVC)
-        # 为 fasthash_simd.cpp 单独启用 /arch:AVX512
+        # Enable /arch:AVX512 only for fasthash_simd.cpp
         set_source_files_properties(cpp/fasthash_simd.cpp PROPERTIES COMPILE_OPTIONS "/arch:AVX512")
     else()
-        # 仅对该 TU 启用 AVX-512 指令集
+        # Enable AVX-512 instruction set only for this TU
         set_source_files_properties(cpp/fasthash_simd.cpp PROPERTIES COMPILE_OPTIONS "-mavx512f;-mavx512dq;-mavx512vl")
     endif()
 else()
     message(WARNING "ENABLE_AVX512=OFF; skipping cpp/fasthash_simd.cpp (SIMD sketch will be unavailable)")
 endif()
 
-# Python模块（若找到pybind11则构建，否则跳过）
+# Python module (build if pybind11 is found, otherwise skip)
 if(pybind11_FOUND)
     pybind11_add_module(FastSketchLSH cpp/init.cpp)
     target_link_libraries(FastSketchLSH PRIVATE FastSketchLSH_core pybind11::module)
@@ -62,5 +62,5 @@ else()
     message(WARNING "pybind11 not found; skipping Python module build (FastSketchLSH)")
 endif()
 
-# 安装配置
+# Install configuration
 install(TARGETS FastSketchLSH LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX})

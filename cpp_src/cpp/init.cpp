@@ -189,7 +189,7 @@ py::class_<FastSketchLSH>(m, "FastSketchLSH")
               throw py::value_error("Items cannot be empty");
           }
           
-          // 检查第一个元素的类型以确定使用哪个重载
+          // Check the type of the first element to decide which overload to use
           auto first_item = *items.begin();
           if (py::isinstance<py::str>(first_item) || py::isinstance<py::bytes>(first_item)) {
               std::vector<std::string> str_items;
@@ -223,7 +223,7 @@ py::class_<FastSketchLSH>(m, "FastSketchLSH")
               throw py::value_error("Items cannot be empty");
           }
           
-          // 检查第一个元素的类型以确定使用哪个重载
+          // Check the type of the first element to decide which overload to use
           auto first_item = *items.begin();
           if (py::isinstance<py::str>(first_item) || py::isinstance<py::bytes>(first_item)) {
               std::vector<std::string> str_items;

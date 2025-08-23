@@ -3,7 +3,7 @@ from collections import defaultdict
 
 
 class Timer:
-    """计时器类，用于测量代码块的执行时间"""
+    """Timer class for measuring execution time of code blocks."""
 
     def __init__(self):
         self.elapsed_times = {}
@@ -11,7 +11,7 @@ class Timer:
         self._current_timer = None
 
     def __call__(self, name):
-        """使Timer实例可以作为上下文管理器使用"""
+        """Enable the Timer instance to be used as a context manager."""
         self._current_timer = name
         return self
 
@@ -23,19 +23,19 @@ class Timer:
         self.elapsed_times[self._current_timer] = time.perf_counter() - self._start_times[self._current_timer]
 
     def reset(self):
-        """重置计时器"""
+        """Reset the timer."""
         self.elapsed_times = {}
         self._start_times = {}
 
 
 class UnionFind:
-    """并查集数据结构，用于跟踪重复项的聚类"""
+    """Union-Find data structure for tracking clusters of duplicates."""
 
     def __init__(self):
         self.parent = {}
 
     def find(self, x):
-        """查找x的根节点（带路径压缩）"""
+        """Find the root of x (with path compression)."""
         if x not in self.parent:
             self.parent[x] = x
             return x
@@ -45,7 +45,7 @@ class UnionFind:
         return self.parent[x]
 
     def union(self, x, y):
-        """合并x和y所在的集合"""
+        """Union the sets containing x and y."""
         root_x = self.find(x)
         root_y = self.find(y)
 

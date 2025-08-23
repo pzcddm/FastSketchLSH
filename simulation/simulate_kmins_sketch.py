@@ -13,9 +13,9 @@ RANDOM_SEED = 42
 NUMPY_SEED = 42
 
 
-# 添加这两行来解决中文显示和负号显示问题
-plt.rcParams['font.sans-serif'] = ['SimHei']  # 指定默认字体为黑体
-plt.rcParams['axes.unicode_minus'] = False  # 解决保存图像是负号'-'显示为方块的问题
+# Add these lines to handle Chinese fonts and minus sign rendering
+plt.rcParams['font.sans-serif'] = ['SimHei']  # Use SimHei as default font
+plt.rcParams['axes.unicode_minus'] = False    # Ensure minus '-' renders correctly
 
 
 def main():
@@ -34,8 +34,8 @@ def main():
     num_simulations = 400
     target_jaccard = 0.5  # Target Jaccard similarity
 
-    print(f"开始模拟 {num_simulations} 次...")
-    print(f"目标 Jaccard 值: {target_jaccard:.4f}")
+    print(f"Starting simulation for {num_simulations} runs...")
+    print(f"Target Jaccard: {target_jaccard:.4f}")
 
     # Create one sketcher instance with fixed seed for reproducibility
     sketcher = KMinSketch(k, random_seed=RANDOM_SEED)
@@ -60,7 +60,7 @@ def main():
             print(f"Completed {i+1}/{num_simulations} simulations")
     
     avg_actual_jaccard = np.mean(actual_jaccards)
-    print(f"平均实际 Jaccard 值: {avg_actual_jaccard:.4f}")
+    print(f"Mean actual Jaccard: {avg_actual_jaccard:.4f}")
     print("mean, var:", np.mean(results), np.var(results, ddof=1))
     print("theoretical var:", avg_actual_jaccard*(1-avg_actual_jaccard)/k)
     
@@ -69,7 +69,7 @@ def main():
     # Plot histogram of estimated Jaccard similarities
     plt.figure(figsize=(12, 6))
     plt.hist(results, bins=50, density=True, alpha=0.75, label=f"Simulation Distribution (k={k})")
-    plt.axvline(avg_actual_jaccard, color='r', linestyle='--', linewidth=2, label=f"平均真实 Jaccard: {avg_actual_jaccard:.4f}")
+    plt.axvline(avg_actual_jaccard, color='r', linestyle='--', linewidth=2, label=f"Mean actual Jaccard: {avg_actual_jaccard:.4f}")
     plt.title('Histogram of Estimated Jaccard Similarity using KMinSketch')
     plt.xlabel('Estimated Jaccard Similarity')
     plt.xlim(avg_actual_jaccard-0.1, avg_actual_jaccard+0.1)

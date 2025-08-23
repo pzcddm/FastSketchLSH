@@ -13,7 +13,7 @@ from typing import List, Iterable
 
 
 def _permute_hash(h: int, a: int, b: int) -> np.uint32:
-    """模拟排列哈希，计算(a * h + b) mod 2^64 的高32位"""
+    """Simulate permutation hashing: compute the upper 32 bits of (a * h + b) mod 2^64."""
     return np.uint32(((a * h + b) % (2**64)) >> 32)
 
 

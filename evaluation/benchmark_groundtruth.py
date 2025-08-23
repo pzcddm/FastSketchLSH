@@ -10,14 +10,14 @@ import pandas as pd
 from datasets import load_dataset, Features, Sequence, Value
 from tqdm import tqdm
 
-# 你的原有导入
+# Your original imports
 from datasketch import MinHash, MinHashLSH
 from datasketch.lsh import _optimal_param
 from rensa import RMinHash, RMinHashLSH
 
 
 class Timer:
-    """计时器类，用于记录各个算法的执行时间"""
+    """Timer class for recording the execution time of algorithms."""
 
     def __init__(self):
         self.elapsed_times = {}
@@ -38,7 +38,7 @@ class Timer:
 
 
 class UnionFind:
-    """并查集数据结构，用于管理重复文档的聚类"""
+    """Union-Find data structure for managing clusters of duplicate documents."""
 
     def __init__(self):
         self.parent = {}
@@ -57,7 +57,7 @@ class UnionFind:
 
 
 def _recall(row):
-    """计算召回率"""
+    """Compute recall."""
     labelled_dups = set(row["duplicates"])
     LEN_LABELLED_DUPLICATES = len(labelled_dups)
     if LEN_LABELLED_DUPLICATES == 0:
@@ -67,7 +67,7 @@ def _recall(row):
 
 
 def _precision(row):
-    """计算精确率"""
+    """Compute precision."""
     labelled_dups = set(row["duplicates"])
     dups = set(row["predictions"])
     LEN_DUPLICATES = len(dups)
@@ -77,7 +77,7 @@ def _precision(row):
 
 
 def classify_in_paper(record):
-    """分类预测结果：TP, TN, FP, FN"""
+    """Classify prediction result: TP, TN, FP, FN."""
     duplicates = set(record["duplicates"])
     predictions = set(record["predictions"])
 
@@ -100,19 +100,19 @@ def classify_in_paper(record):
 
 
 def inverse(label: str) -> str:
-    """反转分类标签"""
+    """Invert classification label."""
     return {"TP": "TN", "FN": "FP", "FP": "FN", "TN": "TP"}[label]
 
 
 def calculate_metrics(uf: UnionFind, truth: list, id2core_id: dict, labels: dict, name: str, elapsed_time: float):
-    """计算并返回算法的各项指标"""
-    # 从UnionFind构建聚类
+    """Compute and return metrics for an algorithm."""
+    # Build clusters from UnionFind
     id2cluster = defaultdict(set)
     for idx in range(len(truth)):
         cluster_id = uf.find(idx)
         id2cluster[cluster_id].add(idx)
 
-    # 生成预测结果
+    # Generate predictions
     predictions = {}
     for x in truth:
         idx = x["id"]
@@ -124,7 +124,7 @@ def calculate_metrics(uf: UnionFind, truth: list, id2core_id: dict, labels: dict
             if neighbor != idx and neighbor in id2core_id
         }
 
-    # 创建DataFrame进行评估
+    # Create DataFrame for evaluation
     df = (
         pd.Series(labels)
         .to_frame("duplicates")
@@ -132,20 +132,20 @@ def calculate_metrics(uf: UnionFind, truth: list, id2core_id: dict, labels: dict
         .merge(pd.Series(predictions).to_frame("predictions").reset_index(), on="index")
     )
 
-    # 计算准确度
+    # Compute accuracy
     df["Correct"] = df.apply(
         lambda row: set(row["duplicates"]) == set(row["predictions"]), axis=1
     ).astype(int)
 
-    # 计算召回率和精确率
+    # Compute recall and precision
     recalls = df.apply(_recall, axis=1)
     precisions = df.apply(_precision, axis=1)
 
-    # 分类结果
+    # Classification results
     df["Class"] = df.apply(classify_in_paper, axis=1)
     df["Class_"] = df.apply(lambda row: inverse(row["Class"]), axis=1)
 
-    # 计算各类别的精确率和召回率
+    # Compute precision and recall for each class
     metrics = {}
     for col in ["Class", "Class_"]:
         label_counts = df[col].value_counts().to_dict()
@@ -183,18 +183,18 @@ def calculate_metrics(uf: UnionFind, truth: list, id2core_id: dict, labels: dict
 
 def convert_results_to_unionfind(kept_indices: Set[int], all_indices: Set[int],
                                  candidate_sets: List[Set[int]]) -> UnionFind:
-    """将去重结果转换为UnionFind格式"""
+    """Convert deduplication results into UnionFind format."""
     uf = UnionFind()
 
-    # 初始化所有索引
+    # Initialize all indices
     for idx in all_indices:
         uf.find(idx)
 
-    # 将候选集中的文档进行合并
+    # Merge documents within each candidate set
     for i, candidates in enumerate(candidate_sets):
-        if len(candidates) > 1:  # 只有当候选集有多个元素时才合并
+        if len(candidates) > 1:  # Merge only when a candidate set has multiple elements
             candidates_list = list(candidates)
-            # 将候选集中的所有元素与第一个元素合并
+            # Merge all elements in the candidate set with the first element
             for j in range(1, len(candidates_list)):
                 uf.union(candidates_list[0], candidates_list[j])
 
@@ -202,12 +202,12 @@ def convert_results_to_unionfind(kept_indices: Set[int], all_indices: Set[int],
 
 
 def print_performance_comparison(results_table: List[Dict]):
-    """打印性能对比"""
+    """Print performance comparison."""
     print("\n" + "=" * 60)
     print("PERFORMANCE COMPARISON")
     print("=" * 60)
 
-    # 找到基准算法（Datasketch）
+    # Find the baseline algorithm (Datasketch)
     baseline = next(r for r in results_table if r["name"] == "Datasketch")
 
     for result in results_table:
@@ -223,7 +223,7 @@ def print_performance_comparison(results_table: List[Dict]):
 
 
 def create_comparison_table(results_table: List[Dict]) -> pd.DataFrame:
-    """创建格式化的对比表格"""
+    """Create a formatted comparison table."""
     data = []
     for result in results_table:
         data.append([
@@ -251,21 +251,21 @@ def create_comparison_table(results_table: List[Dict]) -> pd.DataFrame:
     return df
 
 def run_evaluation_benchmark(args):
-    """运行完整的评估基准测试"""
+    """Run the full evaluation benchmark."""
     timer = Timer()
 
     print("Loading dataset...")
-    # 加载数据集
+    # Load dataset
     ds = load_dataset("pinecone/core-2020-05-10-deduplication", split="train")
 
-    # 采样数据
+    # Sample data
     if args.ratio < 1.0:
         total_size = len(ds)
         sample_size = int(total_size * args.ratio)
         indices = random.sample(range(total_size), sample_size)
         ds = ds.select(indices)
 
-    # 准备文本数据
+    # Prepare text data
     texts = []
     truth = []
     for idx, record in enumerate(ds):
@@ -278,17 +278,17 @@ def run_evaluation_benchmark(args):
             "duplicates": record.get("labelled_duplicates", [])
         })
 
-    # 构建token sets
+    # Build token sets
     token_sets = [list({tok for tok in text.lower().split() if tok}) for text in texts]
 
-    # 构建标签映射
+    # Build label mapping
     id2core_id = {x["id"]: int(x["core_id"]) for x in truth}
     labels = {
         int(x["core_id"]): set(map(int, x["duplicates"])) if x["duplicates"] else set()
         for x in truth
     }
 
-    # 计算LSH参数
+    # Compute LSH parameters
     bands, rows = _optimal_param(args.lsh_threshold, args.num_perm, 0.5, 0.5)
     num_perm = bands * rows
 
@@ -299,28 +299,28 @@ def run_evaluation_benchmark(args):
 
     results_table = []
 
-    # 1. 运行Datasketch LSH
+    # 1. Run Datasketch LSH
     print("\nRunning Datasketch LSH...")
     with timer("Datasketch"):
         ds_res = run_datasketch_lsh_with_candidates(
             token_sets, args.lsh_threshold, num_perm, bands, rows
         )
 
-    # 转换为UnionFind格式
+    # Convert to UnionFind format
     ds_uf = convert_results_to_unionfind(
         ds_res["kept_indices"],
         set(range(len(token_sets))),
         ds_res["candidate_sets"]
     )
 
-    # 计算指标
+    # Compute metrics
     ds_metrics = calculate_metrics(
         ds_uf, truth, id2core_id, labels,
         "Datasketch", timer.elapsed_times["Datasketch"]
     )
     results_table.append(ds_metrics)
 
-    # 2. 运行FastSketch LSH
+    # 2. Run FastSketch LSH
     print("\nRunning FastSketch LSH...")
     with timer("FastSketch"):
         fs_res = run_fastsketch_lsh_with_candidates(
@@ -339,7 +339,7 @@ def run_evaluation_benchmark(args):
     )
     results_table.append(fs_metrics)
 
-    # 3. 运行Rensa LSH
+    # 3. Run Rensa LSH
     print("\nRunning Rensa LSH...")
     with timer("Rensa"):
         rs_res = run_rensa_lsh_with_candidates(
@@ -358,14 +358,14 @@ def run_evaluation_benchmark(args):
     )
     results_table.append(rs_metrics)
 
-    # 打印结果表格
+    # Print results table
     print("\n" + "=" * 80)
     print("EVALUATION RESULTS")
     print("=" * 80)
 
     df_results = pd.DataFrame(results_table)
 
-    # 格式化输出
+    # Formatted output
     print("\nDetailed Metrics:")
     for _, row in df_results.iterrows():
         print(f"\n{row['name']}:")
@@ -379,7 +379,7 @@ def run_evaluation_benchmark(args):
         print(f"  Mean Recall: {row['mean_recall']:.4f}")
         print(f"  Time: {row['time']:.2f}s")
 
-    # 创建对比表格
+    # Create comparison table
     comparison_df = df_results[[
         'name', 'mean_precision', 'mean_recall', 'accuracy', 'time'
     ]].round(4)
@@ -389,22 +389,22 @@ def run_evaluation_benchmark(args):
     print("=" * 60)
     print(comparison_df.to_string(index=False))
 
-    # 保存结果
+    # Save results
     if args.save_results:
         output_file = f"evaluation_results_{args.lsh_threshold}_{args.num_perm}.csv"
         df_results.to_csv(output_file, index=False)
         print(f"\nResults saved to: {output_file}")
 
-    # 在打印结果表格后添加
+    # After printing result tables
     print_performance_comparison(results_table)
-    # 创建并打印格式化表格
+    # Create and print a formatted table
     comparison_table = create_comparison_table(results_table)
     print("\n" + "=" * 80)
     print("FORMATTED RESULTS TABLE (Markdown Format)")
     print("=" * 80)
     print(comparison_table.to_markdown(index=False))
 
-# 修改原有的运行函数，添加候选集返回
+# Modify the original run functions to return candidate sets
 def run_datasketch_lsh_with_candidates(
         token_sets: List[List[str]],
         threshold: float,
@@ -412,7 +412,7 @@ def run_datasketch_lsh_with_candidates(
         bands: int,
         rows: int
 ) -> Dict[str, Any]:
-    """运行Datasketch LSH并返回候选集"""
+    """Run Datasketch LSH and return candidate sets."""
     n = len(token_sets)
 
     # Phase1: Build MinHash
@@ -436,7 +436,7 @@ def run_datasketch_lsh_with_candidates(
     start3 = time.perf_counter()
     candidate_sets = [set(lsh.query(m)) for m in minhashes]
 
-    # 去重处理
+    # Deduplication process
     to_remove = set()
     for i in range(n):
         candidates = candidate_sets[i]
@@ -468,11 +468,11 @@ def run_fastsketch_lsh_with_candidates(
         bands: int,
         random_seed: int = 42
 ) -> Dict[str, Any]:
-    """运行FastSketch LSH并返回候选集"""
+    """Run FastSketch LSH and return candidate sets."""
     from src.fast_sketch_lsh import FastSketchLSH
     n = len(token_sets)
 
-    # 阶段1: 插入
+    # Phase 1: Insert
     start1 = time.perf_counter()
     lsh = FastSketchLSH(threshold=threshold, sketch_size=num_perm,
                         bands=bands, random_seed=random_seed)
@@ -480,12 +480,12 @@ def run_fastsketch_lsh_with_candidates(
         lsh.insert(idx, tokens)
     phase1_time = time.perf_counter() - start1
 
-    # 阶段2: 查询
+    # Phase 2: Query
     start2 = time.perf_counter()
     candidate_sets = [set(lsh.query(tokens)) for tokens in token_sets]
     phase2_time = time.perf_counter() - start2
 
-    # 阶段3: 去重处理
+    # Phase 3: Deduplication
     start3 = time.perf_counter()
     to_remove = set()
     for i in range(n):
@@ -517,7 +517,7 @@ def run_rensa_lsh_with_candidates(
         bands: int,
         random_seed: int = 42
 ) -> Dict[str, Any]:
-    """运行Rensa LSH并返回候选集"""
+    """Run Rensa LSH and return candidate sets."""
     n = len(token_sets)
 
     # Phase1: Build MinHash
@@ -540,7 +540,7 @@ def run_rensa_lsh_with_candidates(
     start3 = time.perf_counter()
     candidate_sets = [set(lsh.query(m)) for m in minhashes]
 
-    # 去重处理
+    # Deduplication process
     to_remove = set()
     for i in range(n):
         candidates = candidate_sets[i]

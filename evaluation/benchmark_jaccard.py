@@ -52,7 +52,7 @@ def calculate_optimal_num_bands(threshold, num_perm):
     return best_num_bands
 
 
-def run_datasketch_lsh(#师兄实现
+def run_datasketch_lsh(
         token_sets: List[List[str]],
         threshold: float,
         num_perm: int,
@@ -64,7 +64,7 @@ def run_datasketch_lsh(#师兄实现
 
     # Phase1: Build MinHash
     start1 = time.perf_counter()
-    minhashes = []#师兄用的是list
+    minhashes = []  # Use a list to store MinHashes
     for tokens in token_sets:
         m = MinHash(num_perm=num_perm)
         for tok in tokens:
@@ -79,22 +79,22 @@ def run_datasketch_lsh(#师兄实现
         lsh.insert(idx, m)
     phase2_time = time.perf_counter() - start2
 
-    # Phase3: 查询并使用简化策略去重
+    # Phase3: Query and deduplicate using a simplified strategy
     start3 = time.perf_counter()
-    # 查询所有候选集并计算平均大小
+    # Query all candidate sets and compute mean size
     candidate_sets = [lsh.query(m) for m in minhashes]
 
-    # 使用简化策略去重
+    # Deduplicate using a simplified strategy
     to_remove = set()
     for i in range(n):
         candidates = candidate_sets[i]
-        # 过滤掉自身
+        # Filter out self
         other_candidates = [c for c in candidates if c != i]
 
         if other_candidates:
-            # 移除策略：保留ID最小的文档
+            # Removal strategy: keep the smallest ID in the group
             min_id = min([i] + other_candidates)
-            # 将组内除最小ID外的所有文档加入移除集合
+            # Add all non-min elements in the group to the removal set
             to_remove.update([c for c in [i] + other_candidates if c != min_id])
 
     kept_indices = set(range(n)) - to_remove
@@ -122,34 +122,34 @@ def run_fastsketch_lsh(
         num_perm: int,
         bands: int,
         random_seed: int = 42,
-        final_jaccard_threshold: float = 0.8  # 添加最终Jaccard阈值参数
+        final_jaccard_threshold: float = 0.8  # Final Jaccard threshold parameter (not used here)
 ) -> Dict[str, Any]:
     from src.fast_sketch_lsh import FastSketchLSH
     n = len(token_sets)
-    # 阶段1: 插入
+    # Phase1: Insert
     start1 = time.perf_counter()
     lsh = FastSketchLSH(threshold=threshold, sketch_size=num_perm, bands=bands, random_seed=random_seed)
     for idx, tokens in enumerate(token_sets):
         lsh.insert(idx, tokens)
     phase1_time = time.perf_counter() - start1
 
-    # 阶段2: 查询并计算指标
+    # Phase2: Query and compute metrics
     start2 = time.perf_counter()
     candidate_sets = [lsh.query(tokens) for tokens in token_sets]
     phase2_time = time.perf_counter() - start2
 
-    # 去重处理 (生成kept_indices和to_remove)
+    # Deduplication (produce kept_indices and to_remove)
     start3 = time.perf_counter()
     to_remove = set()
     for i in range(n):
         candidates = candidate_sets[i]
-        # 过滤掉自身
+        # Filter out self
         other_candidates = [c for c in candidates if c != i]
 
         if other_candidates:
-            # 移除策略：保留ID最小的文档
+            # Removal strategy: keep the smallest ID in the group
             min_id = min([i] + other_candidates)
-            # 将组内除最小ID外的所有文档加入移除集合
+            # Add all non-min elements in the group to the removal set
             to_remove.update([c for c in [i] + other_candidates if c != min_id])
 
     kept_indices = set(range(n)) - to_remove
@@ -171,7 +171,7 @@ def run_rensa_lsh(
         num_perm: int,
         bands: int,
         random_seed: int = 42,
-        final_jaccard_threshold: float = 0.8  # 添加最终Jaccard阈值参数
+        final_jaccard_threshold: float = 0.8  # Final Jaccard threshold parameter (not used here)
 ) -> Dict[str, Any]:
     from datasketch import MinHash, MinHashLSH
     n = len(token_sets)
@@ -192,22 +192,22 @@ def run_rensa_lsh(
         lsh.insert(idx, m)
     phase2_time = time.perf_counter() - start2
 
-    # Phase3: 查询并使用简化策略去重
+    # Phase3: Query and deduplicate using a simplified strategy
     start3 = time.perf_counter()
-    # 查询所有候选集并计算平均大小
+    # Query all candidate sets and compute mean size
     candidate_sets = [lsh.query(m) for m in minhashes]
 
-    # 使用简化策略去重
+    # Use simplified dedup strategy
     to_remove = set()
     for i in range(n):
         candidates = candidate_sets[i]
-        # 过滤掉自身
+        # Filter out self
         other_candidates = [c for c in candidates if c != i]
 
         if other_candidates:
-            # 移除策略：保留ID最小的文档
+            # Removal strategy: keep the smallest ID in the group
             min_id = min([i] + other_candidates)
-            # 将组内除最小ID外的所有文档加入移除集合
+            # Add all non-min elements in the group to the removal set
             to_remove.update([c for c in [i] + other_candidates if c != min_id])
 
     kept_indices = set(range(n)) - to_remove
@@ -260,7 +260,7 @@ def run_lsh_benchmark(args):
     SEED = args.seed
     LSH_THRESHOLD = args.lsh_threshold
 
-    #先写死
+    # Hard-code for now
     # Calculate optimal number of bands for fair comparison
     # if args.num_bands:
     #     NUM_BANDS_RENSA = args.num_bands
@@ -276,11 +276,11 @@ def run_lsh_benchmark(args):
     num_perm = bands * rows
     print(f"bands: {bands}, rows: {rows}, num_perm: {num_perm}")
 
-    # 运行Datasketch LSH
+    # Run Datasketch LSH
     ds_res = run_datasketch_lsh(token_sets, LSH_THRESHOLD, num_perm, bands, rows)
-    # 运行FastSketch LSH
+    # Run FastSketch LSH
     fs_res = run_fastsketch_lsh(token_sets, LSH_THRESHOLD, num_perm, bands, SEED)
-    # 运行Rensa LSH
+    # Run Rensa LSH
     rs_res = run_rensa_lsh(token_sets, LSH_THRESHOLD, num_perm, bands, SEED)
 
     print("\nDatasketch MinHashLSH:")
@@ -420,7 +420,7 @@ def run_lsh_benchmark(args):
             print(
                 f"RensaLSH was {1 / overall_speedup:.2f}x faster overall than FastSketchLSH."
             )
-    #rensa原作额外支持的统计信息：
+    # Additional statistics potentially supported by original Rensa implementation:
     # Phase-by-phase comparison
     # Efficiency comparison
 
@@ -434,9 +434,9 @@ if __name__ == "__main__":
     #     default=None,
     #     help="Limit the number of dataset rows to process for faster testing.",
     # )
-    # 使用的是jaccard，而不是hamming
-    # 使用了 LSH_t，暂无使用 FINAL_JACCARD_THRESHOLD
-    # 暂不支持用户自定义 NUM_BANDS
+    # Uses Jaccard, not Hamming
+    # Uses LSH threshold; FINAL_JACCARD_THRESHOLD unused
+    # User-defined NUM_BANDS not yet supported
     parser.add_argument(
         "--num_perm", type=int, default=128, help="Number of permutations for MinHash."
     )
