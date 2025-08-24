@@ -42,6 +42,7 @@ except Exception:
 
 try:
     from datasketch import MinHash, MinHashLSH  # type: ignore
+    from  rensa import RMinHash, RMinHashLSH
     HAVE_DATASKETCH = True
 except Exception:
     HAVE_DATASKETCH = False
@@ -110,14 +111,15 @@ def main(ratio: float = 1.0) -> None:
     
     # datasketch: enforce same bands/rows via params=(b, r)
     # Rebuild using explicit params and same threshold/num_perm
-    lsh_ds = MinHashLSH(threshold=threshold, num_perm=num_perm, params=(bands, rows))
+    # lsh_ds = MinHashLSH(threshold=threshold, num_perm=num_perm, params=(bands, rows))
+    lsh_ds = RMinHashLSH(threshold=threshold, num_perm=num_perm, num_bands=bands)
     # Build MinHashes
+    token_sets_str = [[str(tok) for tok in tokens] for tokens in token_sets]
     ds_minhash_start = time.perf_counter()
     minhashes = []
-    for tokens in token_sets:
-        m = MinHash(num_perm=num_perm)
-        for tok in tokens:
-            m.update(tok.encode("utf-8"))
+    for tokens in token_sets_str:
+        m = RMinHash(num_perm=num_perm, seed=42)
+        m.update(tokens)
         minhashes.append(m)
     ds_minhash_time = time.perf_counter() - ds_minhash_start
 
@@ -133,11 +135,12 @@ def main(ratio: float = 1.0) -> None:
     ds_query_time = time.perf_counter() - ds_query_start
 
     # fast sketch with the same bands and sketch_size=num_perm
-    from src.fast_sketch_lsh import FastSketchLSH  # type: ignore
+    # from src.fast_sketch_lsh import FastSketchLSH  # type: ignore
+    from FastSketchLSH import FastSketchLSH
     fs_insert_start = time.perf_counter()
     lsh_fs = FastSketchLSH(threshold=threshold, sketch_size=num_perm, bands=bands, random_seed=42)
     for idx, tokens in enumerate(token_sets):
-        lsh_fs.insert(idx, tokens)
+        lsh_fs.insert(str(idx), tokens)
     fs_insert_time = time.perf_counter() - fs_insert_start
 
     fs_query_start = time.perf_counter()
@@ -154,12 +157,12 @@ def main(ratio: float = 1.0) -> None:
     total_time = time.perf_counter() - t0
     print(f"Total texts: {len(texts)}")
     print(f"bands: {bands}, rows: {rows}, threshold: {threshold}, num_perm: {num_perm}")
-    print(f"datasketch duplicate flags sum: {sum(datasketch_flags)}")
+    print(f"Rensa duplicate flags sum: {sum(datasketch_flags)}")
     print(f"fastsketch duplicate flags sum: {sum(fastsketch_flags)}")
     print(f"Hamming differences: {diffs}, rate: {rate:.4f}")
     print("Timing (seconds):")
     print(f"  token_build_time: {token_build_time:.3f}")
-    print(f"  datasketch: build_minhash={ds_minhash_time:.3f}, insert={ds_insert_time:.3f}, query={ds_query_time:.3f}")
+    print(f"  Rensa: build_minhash={ds_minhash_time:.3f}, insert={ds_insert_time:.3f}, query={ds_query_time:.3f}")
     print(f"  fastsketch: insert={fs_insert_time:.3f}, query={fs_query_time:.3f}")
     print(f"  total: {total_time:.3f}")
     if rate > max_rate:
