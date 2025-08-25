@@ -35,6 +35,7 @@ set(FASTSKETCH_CORE_SRCS
     cpp/fasthash_simd.cpp
     cpp/murmurhash3.cpp
     cpp/fastsketch_lsh.cpp
+    cpp/fastsketch_rensa_lsh.cpp
 )
 
 add_library(FastSketchLSH_core STATIC ${FASTSKETCH_CORE_SRCS})

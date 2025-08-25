@@ -68,6 +68,7 @@ if pybind11_available:
             "cpp/fasthash_simd.cpp",
             'cpp/murmurhash3.cpp',
             'cpp/fastsketch_lsh.cpp',
+            'cpp/fastsketch_rensa_lsh.cpp',
             'cpp/init.cpp'
         ],
         include_dirs=['include', pybind11.get_include()],

@@ -6,6 +6,7 @@
 #include "../include/fasthash.h"
 #include "../include/fasthash_simd.h"
 #include "../include/fastsketch_lsh.h"
+#include "../include/fastsketch_rensa_lsh.h"
 
 namespace py = pybind11;
 
@@ -172,7 +173,7 @@ PYBIND11_MODULE(FastSketchLSH, m) {
       }, py::arg("items"),
         "Compute MinHash signature for integer sets using FastSimilaritySketchSIMD algorithm");
 
-py::class_<FastSketchLSH>(m, "FastSketchLSH")
+    py::class_<FastSketchLSH>(m, "FastSketchLSH")
       .def(py::init<float, size_t, size_t, uint32_t>(),
             py::arg("threshold"),
             py::arg("sketch_size"),
@@ -257,4 +258,36 @@ py::class_<FastSketchLSH>(m, "FastSketchLSH")
       
       .def("clear", &FastSketchLSH::clear,
             "Remove all keys from the LSH index");
+
+
+    py::class_<FastSketchLSHRensa>(m, "FastSketchLSHRensa")
+      // 构造函数
+      .def(py::init<double, std::size_t, std::size_t>(),
+           py::arg("threshold"),
+           py::arg("num_perm"),
+           py::arg("num_bands"),
+           "Initialize FastSketchLSHRensa with:\n"
+           "  threshold: Jaccard similarity threshold (0 < threshold < 1)\n"
+           "  num_perm : Number of permutations (sketch length)\n"
+           "  num_bands: Number of bands (must divide num_perm)")
+
+      .def("insert",
+           [](FastSketchLSHRensa& self, std::size_t key, const FastSimilaritySketch& sketch) {
+               self.insert(key, sketch);
+           },
+           py::arg("key"), py::arg("sketch"),
+           "Insert a sketch with a numeric key")
+
+      .def("query",
+           [](const FastSketchLSHRensa& self, const FastSimilaritySketch& sketch) {
+               return self.query(sketch);
+           },
+           py::arg("sketch"),
+           "Query candidates for a given sketch")
+
+      // 只读属性
+      .def_property_readonly("num_perm",  &FastSketchLSHRensa::num_perm)
+      .def_property_readonly("num_bands", &FastSketchLSHRensa::num_bands)
+      .def_property_readonly("band_size",&FastSketchLSHRensa::band_size)
+      .def_property_readonly("threshold",&FastSketchLSHRensa::threshold);
 }

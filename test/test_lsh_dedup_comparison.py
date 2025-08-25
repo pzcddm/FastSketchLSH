@@ -42,7 +42,8 @@ except Exception:
 
 try:
     from datasketch import MinHash, MinHashLSH  # type: ignore
-    from  rensa import RMinHash, RMinHashLSH
+    from rensa import RMinHash, RMinHashLSH
+    from FastSketchLSH import FastSimilaritySketch, FastSketchLSHRensa
     HAVE_DATASKETCH = True
 except Exception:
     HAVE_DATASKETCH = False
@@ -109,30 +110,47 @@ def main(ratio: float = 1.0) -> None:
     num_perm = bands * rows
     print(f"bands: {bands}, rows: {rows}, num_perm: {num_perm}")
     
-    # datasketch: enforce same bands/rows via params=(b, r)
-    # Rebuild using explicit params and same threshold/num_perm
-    # lsh_ds = MinHashLSH(threshold=threshold, num_perm=num_perm, params=(bands, rows))
-    lsh_ds = RMinHashLSH(threshold=threshold, num_perm=num_perm, num_bands=bands)
+    # RminHashLSH
+    lsh_rs = RMinHashLSH(threshold=threshold, num_perm=num_perm, num_bands=bands)
     # Build MinHashes
     token_sets_str = [[str(tok) for tok in tokens] for tokens in token_sets]
-    ds_minhash_start = time.perf_counter()
+    rs_minhash_start = time.perf_counter()
     minhashes = []
     for tokens in token_sets_str:
         m = RMinHash(num_perm=num_perm, seed=42)
         m.update(tokens)
         minhashes.append(m)
-    ds_minhash_time = time.perf_counter() - ds_minhash_start
-
-    # Insert into datasketch LSH
-    ds_insert_start = time.perf_counter()
+    rs_minhash_time = time.perf_counter() - rs_minhash_start
+    # Insert into RMinhash LSH
+    rs_insert_start = time.perf_counter()
     for idx, m in enumerate(minhashes):
-        lsh_ds.insert(idx, m)
-    ds_insert_time = time.perf_counter() - ds_insert_start
-
+        lsh_rs.insert(idx, m)
+    rs_insert_time = time.perf_counter() - rs_insert_start
     # Query for flags
-    ds_query_start = time.perf_counter()
-    datasketch_flags = [1 if len(lsh_ds.query(m)) > 1 else 0 for m in minhashes]
-    ds_query_time = time.perf_counter() - ds_query_start
+    rs_query_start = time.perf_counter()
+    RMinhashlsh_flags = [1 if len(lsh_rs.query(m)) > 1 else 0 for m in minhashes]
+    rs_query_time = time.perf_counter() - rs_query_start
+
+    # FastSketchLSHRensa
+    lsh_fsr = FastSketchLSHRensa(threshold=threshold, num_perm=num_perm, num_bands=bands)
+    # Build MinHashes
+    token_sets_str = [[str(tok) for tok in tokens] for tokens in token_sets]
+    fsr_minhash_start = time.perf_counter()
+    minhashes = []
+    for tokens in token_sets_str:
+        m = FastSimilaritySketch(sketch_size=num_perm, seed=42)
+        m.sketch(tokens)
+        minhashes.append(m)
+    fsr_minhash_time = time.perf_counter() - fsr_minhash_start
+    # Insert into FastSketchLSHRensa
+    fsr_insert_start = time.perf_counter()
+    for idx, m in enumerate(minhashes):
+        lsh_fsr.insert(idx, m)
+    fsr_insert_time = time.perf_counter() - fsr_insert_start
+    # Query for flags
+    fsr_query_start = time.perf_counter()
+    fsr_flags = [1 if len(lsh_fsr.query(m)) > 1 else 0 for m in minhashes]
+    fsr_query_time = time.perf_counter() - fsr_query_start
 
     # fast sketch with the same bands and sketch_size=num_perm
     # from src.fast_sketch_lsh import FastSketchLSH  # type: ignore
@@ -147,7 +165,7 @@ def main(ratio: float = 1.0) -> None:
     fastsketch_flags = [1 if len(lsh_fs.query(tokens)) > 1 else 0 for tokens in token_sets]
     fs_query_time = time.perf_counter() - fs_query_start
 
-    diffs, rate = _hamming_diff_rate(datasketch_flags, fastsketch_flags)
+    diffs, rate = _hamming_diff_rate(RMinhashlsh_flags, fastsketch_flags)
 
     # Allow small disagreement due to different banding and sketch constructions
     # Keep this tolerance modest to ensure practical equivalence.
@@ -157,12 +175,14 @@ def main(ratio: float = 1.0) -> None:
     total_time = time.perf_counter() - t0
     print(f"Total texts: {len(texts)}")
     print(f"bands: {bands}, rows: {rows}, threshold: {threshold}, num_perm: {num_perm}")
-    print(f"Rensa duplicate flags sum: {sum(datasketch_flags)}")
+    print(f"Rensa duplicate flags sum: {sum(RMinhashlsh_flags)}")
+    print(f"FastsketchLSHRensa duplicate flags sum: {sum(fsr_flags)}")
     print(f"fastsketch duplicate flags sum: {sum(fastsketch_flags)}")
-    print(f"Hamming differences: {diffs}, rate: {rate:.4f}")
+    # print(f"Hamming differences: {diffs}, rate: {rate:.4f}")
     print("Timing (seconds):")
     print(f"  token_build_time: {token_build_time:.3f}")
-    print(f"  Rensa: build_minhash={ds_minhash_time:.3f}, insert={ds_insert_time:.3f}, query={ds_query_time:.3f}")
+    print(f"  Rensa: build_minhash={rs_minhash_time:.3f}, insert={rs_insert_time:.3f}, query={rs_query_time:.3f}")
+    print(f"  FastsketchLSHRensa: build_minhash={fsr_minhash_time:.3f}, insert={fsr_insert_time:.3f}, query={fsr_query_time:.3f}")
     print(f"  fastsketch: insert={fs_insert_time:.3f}, query={fs_query_time:.3f}")
     print(f"  total: {total_time:.3f}")
     if rate > max_rate:

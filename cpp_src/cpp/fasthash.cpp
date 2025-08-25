@@ -22,6 +22,8 @@ FastSimilaritySketch::FastSimilaritySketch(size_t sketch_size, uint32_t random_s
     for (auto& seed : hash_seeds) {
         seed = dist(gen);
     }
+
+    S.reserve(sketch_size);
 }
 
 
@@ -29,7 +31,7 @@ std::vector<uint64_t> FastSimilaritySketch::sketch(const std::vector<int>& items
     constexpr uint64_t SHIFT = 52;
     constexpr uint64_t MASK  = (uint64_t(1) << SHIFT) - 1;
 
-    std::vector<uint64_t> S(sketch_size, std::numeric_limits<uint64_t>::max());
+    S.assign(sketch_size, std::numeric_limits<uint64_t>::max());
     std::vector<bool> filled_bins(sketch_size, false);
     size_t filled_cnt = 0;
     
@@ -59,7 +61,7 @@ std::vector<uint64_t> FastSimilaritySketch::sketch(const std::vector<std::string
     constexpr uint64_t SHIFT = 52;
     constexpr uint64_t MASK  = (uint64_t(1) << SHIFT) - 1;
 
-    std::vector<uint64_t> S(sketch_size, std::numeric_limits<uint64_t>::max());
+    S.assign(sketch_size, std::numeric_limits<uint64_t>::max());
     std::vector<bool> filled_bins(sketch_size, false);
     size_t filled_cnt = 0;
 
