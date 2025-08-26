@@ -372,6 +372,112 @@ vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<uint32_t>
     return std::vector<uint64_t>(buckets_S.begin(), buckets_S.begin() + t);
 }
 
+// ===================== String/bytes overloads =====================
+vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<string>& bytes) {
+    return sketch(bytes, nullptr, nullptr, nullptr);
+}
+
+vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<string>& bytes,
+                                                          double* prehash_ms,
+                                                          double* phase1_ms,
+                                                          double* phase2_ms) {
+    const int n = (int)bytes.size();
+
+    // 0) Prehash each string once using FNV1a-64 to a 64-bit base
+    auto t0 = std::chrono::high_resolution_clock::now();
+    if (base_buffer.size() < static_cast<size_t>(n)) base_buffer.resize(n);
+    uint64_t* base_ptr = base_buffer.data();
+    for (int j = 0; j < n; ++j) {
+        const string& s = bytes[j];
+        base_ptr[j] = fnv1a64(reinterpret_cast<const uint8_t*>(s.data()), s.size());
+    }
+    auto t1 = std::chrono::high_resolution_clock::now();
+    if (prehash_ms) *prehash_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+    // 1) Buckets: one group (packed key)
+    if (buckets_S.size() < static_cast<size_t>(t)) buckets_S.resize(t);
+    std::memset(buckets_S.data(), 0xFF, static_cast<size_t>(t) * sizeof(uint64_t));
+
+    auto p1_start = std::chrono::high_resolution_clock::now();
+#if defined(FASTHASH_SIMD_AVX512)
+    const __m512i maskv = _mm512_set1_epi64((long long)t_mask);
+    const __m512i h52maskv = _mm512_set1_epi64((long long)H52_MASK);
+#endif
+    for (int i=0; i<t; ++i) {
+        const uint64_t seed_i = seeds[i];
+#if defined(FASTHASH_SIMD_AVX512)
+        const __m512i seedv = _mm512_set1_epi64((long long)seed_i);
+        const __m512i hiv = _mm512_set1_epi64((long long)((uint64_t)i << I_SHIFT));
+#endif
+
+        int j = 0;
+#if defined(FASTHASH_SIMD_AVX512)
+        for (; j+16<=n; j+=16) {
+            round1_block_avx512_optimized(&base_ptr[j], 8, (uint64_t)i, seed_i,
+                                          buckets_S.data(), t_mask);
+            round1_block_avx512_optimized(&base_ptr[j+8], 8, (uint64_t)i, seed_i,
+                                          buckets_S.data(), t_mask);
+        }
+        for (; j+8<=n; j+=8) {
+            round1_block_avx512_optimized(&base_ptr[j], 8, (uint64_t)i, seed_i,
+                                          buckets_S.data(), t_mask);
+        }
+        if (j < n) {
+            round1_block_avx512_optimized(&base_ptr[j], n-j, (uint64_t)i, seed_i,
+                                          buckets_S.data(), t_mask);
+        }
+#else
+        for (; j+16<=n; j+=16) {
+            round1_block_fallback(&base_ptr[j], 8, (uint64_t)i, seed_i, buckets_S.data(), t_mask);
+            round1_block_fallback(&base_ptr[j+8], 8, (uint64_t)i, seed_i, buckets_S.data(), t_mask);
+        }
+        for (; j+8<=n; j+=8) {
+            round1_block_fallback(&base_ptr[j], 8, (uint64_t)i, seed_i, buckets_S.data(), t_mask);
+        }
+        if (j < n) {
+            round1_block_fallback(&base_ptr[j], n-j, (uint64_t)i, seed_i, buckets_S.data(), t_mask);
+        }
+#endif
+        if (all_filled_avx512(buckets_S.data(), t)) break;
+    }
+    auto p1_end = std::chrono::high_resolution_clock::now();
+    if (phase1_ms) *phase1_ms = std::chrono::duration<double, std::milli>(p1_end - p1_start).count();
+
+    // 2) Second phase for empty buckets only
+    auto p2_start = std::chrono::high_resolution_clock::now();
+    if (!all_filled_avx512(buckets_S.data(), t)) {
+        for (int i=t; i<2*t; ++i) {
+            const int b = i - t;
+            if (buckets_S[b] != INF_KEY()) continue;
+            const uint64_t seed_i = seeds[i];
+
+            uint64_t min_h = ~0ull;
+            int j = 0;
+#if defined(FASTHASH_SIMD_AVX512)
+            for (; j+8<=n; j+=8) {
+                __m512i x = _mm512_loadu_si512((const void*)&base_ptr[j]);
+                x = _mm512_xor_si512(x, _mm512_set1_epi64((long long)seed_i));
+                __m512i h = splitmix64_vec(x);
+                uint64_t block_min = hmin_epu64_8(h);
+                if (block_min < min_h) min_h = block_min;
+            }
+#endif
+            for (; j<n; ++j) {
+                uint64_t h = splitmix64(base_ptr[j] ^ seed_i);
+                if (h < min_h) min_h = h;
+            }
+
+            const uint64_t key = pack_key((uint64_t)i, min_h);
+            if (key < buckets_S[b]) {
+                buckets_S[b] = key;
+            }
+        }
+    }
+    auto p2_end = std::chrono::high_resolution_clock::now();
+    if (phase2_ms) *phase2_ms = std::chrono::duration<double, std::milli>(p2_end - p2_start).count();
+    return std::vector<uint64_t>(buckets_S.begin(), buckets_S.begin() + t);
+}
+
 // ===================== Demo =====================
 #ifdef DEMO_MAIN
 

@@ -159,19 +159,42 @@ PYBIND11_MODULE(FastSketchLSH, m) {
           if (items.is_none() || py::len(items) == 0) {
               throw py::value_error("Items cannot be empty");
           }
-          std::vector<uint32_t> int_items;
-          for (auto item : items) {
-              try {
-                  uint32_t value = py::cast<uint32_t>(item);
-                  int_items.push_back(value);
-              } catch (const py::cast_error&) {
-                  throw py::value_error(
-                    "FastSimilaritySketchSIMD.sketch() requires all items to be integers.");
+          // Inspect the first element to decide path
+          std::vector<py::object> objs; objs.reserve(py::len(items));
+          for (auto item : items) { objs.emplace_back(py::reinterpret_borrow<py::object>(item)); }
+          const py::object& first = objs.front();
+          const bool first_is_bytes_like = py::isinstance<py::bytes>(first)
+                                        || py::isinstance<py::str>(first)
+                                        || py::hasattr(first, "__bytes__");
+          if (first_is_bytes_like) {
+              std::vector<std::string> byte_items; byte_items.reserve(objs.size());
+              for (const auto& obj : objs) {
+                  if (py::isinstance<py::bytes>(obj)) {
+                      byte_items.emplace_back(py::cast<std::string>(obj));
+                  } else if (py::isinstance<py::str>(obj)) {
+                      py::bytes b = py::reinterpret_borrow<py::bytes>(py::str(obj).attr("encode")("utf-8"));
+                      byte_items.emplace_back(py::cast<std::string>(b));
+                  } else if (py::hasattr(obj, "__bytes__")) {
+                      py::bytes b = py::reinterpret_borrow<py::bytes>(obj.attr("__bytes__")());
+                      byte_items.emplace_back(py::cast<std::string>(b));
+                  } else {
+                      throw py::value_error("All items must be bytes-like or str when the first is string-like.");
+                  }
               }
+              return self.sketch(byte_items);
+          } else {
+              std::vector<uint32_t> int_items; int_items.reserve(objs.size());
+              for (const auto& obj : objs) {
+                  try {
+                      int_items.push_back(py::cast<uint32_t>(obj));
+                  } catch (const py::cast_error&) {
+                      throw py::value_error("All items must be integers when the first is not string-like.");
+                  }
+              }
+              return self.sketch(int_items);
           }
-          return self.sketch(int_items);
       }, py::arg("items"),
-        "Compute MinHash signature for integer sets using FastSimilaritySketchSIMD algorithm");
+        "Compute sketch for str/bytes or integer lists using FastSimilaritySketchSIMD");
 
     py::class_<FastSketchLSH>(m, "FastSketchLSH")
       .def(py::init<float, size_t, size_t, uint32_t>(),

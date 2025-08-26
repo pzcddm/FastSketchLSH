@@ -113,6 +113,13 @@ struct FastSimilaritySketchAVX512Packed {
                                  double* prehash_ms,
                                  double* phase1_ms,
                                  double* phase2_ms);
+    // Overload: support hashing arbitrary byte strings (e.g., Python bytes/utf-8 encoded str)
+    std::vector<uint64_t> sketch(const std::vector<std::string>& bytes);
+    // Instrumented overload for strings
+    std::vector<uint64_t> sketch(const std::vector<std::string>& bytes,
+                                 double* prehash_ms,
+                                 double* phase1_ms,
+                                 double* phase2_ms);
 };
 
 #endif // FAST_SIMILARITY_SKETCH_AVX512_PACKED_H
