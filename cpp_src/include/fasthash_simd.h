@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <stdexcept>
+#include <cstring>
 
 // TODO: Can we pick a SIMD friendly Hash method? Not fnv1a64?
 // TODO (Maybe): Test scatter and gather in line 100 - 111 (逐lane 更新) 但是得处理冲突情况
@@ -21,6 +22,7 @@ static inline uint64_t INF_KEY() { return ~0ull; }     // Infinity marker for em
 uint64_t pack_key(uint64_t i, uint64_t h52);
 __m512i pack_key_vec(uint64_t i, __m512i h52);
 uint64_t fnv1a64(const uint8_t* p, size_t n);
+uint64_t fxhash64(const uint8_t* p, size_t n);
 uint64_t hash_int32(uint32_t x);
 uint64_t splitmix64(uint64_t x);
 __m512i splitmix64_vec(__m512i x);
@@ -50,6 +52,29 @@ inline uint64_t fnv1a64(const uint8_t* p, size_t n) {
     const uint64_t PRM = 1099511628211ull;
     uint64_t h = OFF;
     for (size_t i = 0; i < n; ++i) { h ^= (uint64_t)p[i]; h *= PRM; }
+    return h;
+}
+
+// FxHasher (rustc_hash) style fast 64-bit hasher for byte strings
+// Processes 8 bytes per step; not cryptographic. Suitable for prehashing.
+inline uint64_t rotl64(uint64_t x, unsigned r) {
+    return (x << r) | (x >> (64u - r));
+}
+
+inline uint64_t fxhash64(const uint8_t* p, size_t n) {
+    const uint64_t K = 0x517cc1b727220a95ull;
+    uint64_t h = 0;
+    size_t i = 0;
+    for (; i + 8 <= n; i += 8) {
+        uint64_t w;
+        std::memcpy(&w, p + i, 8);
+        h = (rotl64(h, 5) ^ w) * K;
+    }
+    if (i < n) {
+        uint64_t tail = 0;
+        std::memcpy(&tail, p + i, n - i);
+        h = (rotl64(h, 5) ^ tail) * K;
+    }
     return h;
 }
 

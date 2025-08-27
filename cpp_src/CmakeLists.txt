@@ -15,12 +15,16 @@ option(ENABLE_AVX2 "Enable AVX2 instructions" ON)
 option(ENABLE_SSE4 "Enable SSE4.2 instructions" ON)
 option(ENABLE_NEON "Enable ARM NEON instructions" OFF)
 option(ENABLE_AVX512 "Enable AVX-512 instructions (fasthash_simd.cpp)" ON)
+option(FASTSKETCH_USE_FXHASH "Use FxHasher-style prehash for strings" ON)
 
 if(ENABLE_AVX2)
     add_definitions(-DUSE_AVX2)
 endif()
 if(ENABLE_SSE4)
     add_definitions(-DUSE_SSE)
+endif()
+if(FASTSKETCH_USE_FXHASH)
+    add_definitions(-DFASTSKETCH_USE_FXHASH)
 endif()
 
 # PyBind11 integration (optional, for Python module)
@@ -29,7 +33,6 @@ find_package(pybind11 QUIET)
 # Core library target (core sources, excluding a separate AVX-512 TU)
 set(FASTSKETCH_CORE_SRCS
     cpp/cminhash.cpp
-    cpp/kminhash.cpp
     cpp/rminhash.cpp
     cpp/fasthash.cpp
     cpp/fasthash_simd.cpp

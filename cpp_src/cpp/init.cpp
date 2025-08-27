@@ -1,7 +1,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include "../include/cminhash.h"
-#include "../include/kminhash.h"
 #include "../include/rminhash.h"
 #include "../include/fasthash.h"
 #include "../include/fasthash_simd.h"
@@ -39,31 +38,7 @@ PYBIND11_MODULE(FastSketchLSH, m) {
         }, py::arg("items"),
           "Compute MinHash signature for integer sets using CMinSketch algorithm");
 
-    py::class_<KMinSketch>(m, "KMinSketch")
-        .def( py::init<size_t, uint32_t>(),
-              py::arg("k") = 128,
-              py::arg("seed") = 42,
-              "Initialize KMinHash with:\n"
-              "  k: Sketch size (default=128)\n"
-              "  seed: Random seed (0 to 0xFFFFFFFF, default=42)")
-
-        .def("sketch", [](KMinSketch& self, py::iterable items) {
-            if (items.is_none() || py::len(items) == 0) {
-                throw py::value_error("Items cannot be empty");
-            }
-            std::vector<int> int_items;
-            for (auto item : items) {
-                try {
-                    int_items.push_back(py::cast<int>(item));
-                } catch (const py::cast_error&) {
-                    throw py::value_error(
-                      "KMinSketch.sketch() requires string-convertible items. "
-                      "Use KMinSketch for integer inputs.");
-                }
-            }
-            return self.sketch(int_items);
-        }, py::arg("items"),
-          "Compute MinHash signature for integer sets using KMinSketch algorithm");
+// KMinSketch removed
 
     py::class_<RMinSketch>(m, "RMinSketch")
       .def( py::init<size_t, uint32_t>(),

@@ -1,6 +1,7 @@
 from setuptools import setup, Extension
 import sys
 import platform
+import os
 
 # Try to import pybind11, but don't fail if it's not available during setup
 try:
@@ -16,6 +17,10 @@ define_macros = [
     ('USE_AVX2', '1'),
     ('PYBIND11_STRICT_ASSERTS', '1'),
 ]
+
+# Enable FxHasher prehash if requested via environment variable
+if os.getenv('FASTSKETCH_USE_FXHASH') in {"1", "ON", "on", "true", "TRUE", "Yes", "yes"}:
+    define_macros.append(('FASTSKETCH_USE_FXHASH', '1'))
 
 system_name = platform.system()
 
@@ -62,7 +67,6 @@ if pybind11_available:
         'FastSketchLSH',
         sources=[
             'cpp/cminhash.cpp',
-            "cpp/kminhash.cpp",
             "cpp/rminhash.cpp",
             "cpp/fasthash.cpp",
             "cpp/fasthash_simd.cpp",
