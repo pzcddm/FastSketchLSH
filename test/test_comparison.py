@@ -22,19 +22,19 @@ import time
 import csv
 import os
 import sys
-import numpy as np
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from typing import List, Tuple
+from typing import List, Tuple, Iterable
 
-# Import our sketch implementations
-# from src.fast_sketch import FastSimilaritySketch
+from FastSketchLSH import FastSimilaritySketchSIMD
+from FastSketchLSH import FastSimilaritySketch
 from src.datasketch_sketch import DatasketchMinHashSketch
 from src.cmins_sketch import CMinHashSketch
 from src.rmins_sketch import RMinHashSketch
-from FastSketchLSH import FastSimilaritySketch
-from FastSketchLSH import FastSimilaritySketchSIMD
 from simulation.util import estimate_jaccard, actual_jaccard, generate_interval_sets_with_jaccard
+
+
+ 
 
 
 class SketchComparison:
@@ -43,10 +43,10 @@ class SketchComparison:
     """
 
     def __init__(self):
-        self.k_values = [32, 64, 128, 256, 512]
-        self.n_values = [100, 2500, 5000, 10000, 20000]
-        # self.k_values = [128]
-        # self.n_values = [300, 1000, 5000, 10000]
+        # self.k_values = [32, 64, 128, 256, 512]
+        # self.n_values = [100, 2500, 5000, 10000, 20000]
+        self.k_values = [64, 128, 256]
+        self.n_values = [100, 300, 1000, 5000, 10000]
         self.results = []
 
     def generate_test_sets(self, n: int, overlap_ratio: float = 0.5, trial: int = 0) -> Tuple[set, set]:
@@ -57,21 +57,21 @@ class SketchComparison:
         set_a, set_b, _ = generate_interval_sets_with_jaccard(overlap_ratio, n, start_id=trial * n)
         return set_a, set_b
 
-    def time_sketch_generation(self, sketcher, test_set: set) -> float:
+    def time_sketch_generation(self, sketcher, items: Iterable) -> Tuple[List[int], float]:
         """
-        Measure time to generate a sketch for a given set.
-        
+        Measure time to generate a sketch and return both sketch and duration.
+
         Args:
             sketcher: Sketch algorithm instance
-            test_set: Set to generate sketch for
-            
+            items: Iterable passed directly to sketcher.sketch (preprocessed as needed)
+
         Returns:
-            Time taken in seconds
+            (sketch, elapsed_seconds)
         """
         start_time = time.perf_counter()
-        sketch = sketcher.sketch(test_set)
+        sketch = sketcher.sketch(items)
         end_time = time.perf_counter()
-        return end_time - start_time
+        return sketch, (end_time - start_time)
 
     def run_single_test(self, k: int, n: int, num_trials: int = 50) -> dict:
         """
@@ -103,47 +103,41 @@ class SketchComparison:
 
             true_jaccard = actual_jaccard(set_a, set_b)
 
-            # Test FastSimilaritySketch
-            # fast_sketcher = FastSimilaritySketch32Bit(sketch_size=k)
-            # fast_sketcher = FastSimilaritySketch(sketch_size=k)
-            fast_sketcher = FastSimilaritySketchSIMD(sketch_size=k)
-            
-            # Time sketch generation for set A and B
-            time_a = self.time_sketch_generation(fast_sketcher, set_a)
-            time_b = self.time_sketch_generation(fast_sketcher, set_b)
-            fast_total_time = time_a + time_b
+            # Precompute representations per algorithm for fair timing
+            int_a = list(set_a)
+            int_b = list(set_b)
+            str_a = [str(x) for x in int_a]
+            str_b = [str(x) for x in int_b]
 
-            # Get sketches and estimate
-            sketch_a = fast_sketcher.sketch(set_a)
-            sketch_b = fast_sketcher.sketch(set_b)
+            # Test FastSimilaritySketch (SIMD expects integers)
+            # fast_sketcher = FastSimilaritySketchSIMD(sketch_size=k)
+            fast_sketcher = FastSimilaritySketch(sketch_size=k)
+
+            # sketch_a, time_a = self.time_sketch_generation(fast_sketcher, int_a)
+            # sketch_b, time_b = self.time_sketch_generation(fast_sketcher, int_b)
+            sketch_a, time_a = self.time_sketch_generation(fast_sketcher, str_a)
+            sketch_b, time_b = self.time_sketch_generation(fast_sketcher, str_b)
+            fast_total_time = time_a + time_b
             fast_estimated = estimate_jaccard(sketch_a, sketch_b)
             fast_error = abs(true_jaccard - fast_estimated)
 
             # Test DatasketchMinHashSketch
             datasketch_sketcher = DatasketchMinHashSketch(num_perm=k)
 
-            # Time sketch generation for set A and B
-            time_a = self.time_sketch_generation(datasketch_sketcher, set_a)
-            time_b = self.time_sketch_generation(datasketch_sketcher, set_b)
+            # Time sketch generation for set A and B using pre-stringified items
+            sketch_a, time_a = self.time_sketch_generation(datasketch_sketcher, str_a)
+            sketch_b, time_b = self.time_sketch_generation(datasketch_sketcher, str_b)
             datasketch_total_time = time_a + time_b
-
-            # Get sketches and estimate
-            sketch_a = datasketch_sketcher.sketch(set_a)
-            sketch_b = datasketch_sketcher.sketch(set_b)
             datasketch_estimated = estimate_jaccard(sketch_a, sketch_b)
             datasketch_error = abs(true_jaccard - datasketch_estimated)
 
             # Test CMinHashSketch
             cmins_sketcher = CMinHashSketch(num_perm=k)
 
-            # Time sketch generation for set A and B
-            time_a = self.time_sketch_generation(cmins_sketcher, set_a)
-            time_b = self.time_sketch_generation(cmins_sketcher, set_b)
+            # Time sketch generation for set A and B using pre-stringified items
+            sketch_a, time_a = self.time_sketch_generation(cmins_sketcher, str_a)
+            sketch_b, time_b = self.time_sketch_generation(cmins_sketcher, str_b)
             cmins_total_time = time_a + time_b
-
-            # Get sketches and estimate
-            sketch_a = cmins_sketcher.sketch(set_a)
-            sketch_b = cmins_sketcher.sketch(set_b)
             cmins_estimated = estimate_jaccard(sketch_a, sketch_b)
             cmins_error = abs(true_jaccard - cmins_estimated)
 
@@ -159,14 +153,10 @@ class SketchComparison:
             # Test RMinHashSketch (Rensa)
             rmins_sketcher = RMinHashSketch(num_perm=k)
 
-            # Time sketch generation for set A and B
-            time_a = self.time_sketch_generation(rmins_sketcher, set_a)
-            time_b = self.time_sketch_generation(rmins_sketcher, set_b)
+            # Time sketch generation for set A and B using pre-stringified items
+            sketch_a, time_a = self.time_sketch_generation(rmins_sketcher, str_a)
+            sketch_b, time_b = self.time_sketch_generation(rmins_sketcher, str_b)
             rmins_total_time = time_a + time_b
-
-            # Get sketches and estimate
-            sketch_a = rmins_sketcher.sketch(set_a)
-            sketch_b = rmins_sketcher.sketch(set_b)
             rmins_estimated = estimate_jaccard(sketch_a, sketch_b)
             rmins_error = abs(true_jaccard - rmins_estimated)
 
