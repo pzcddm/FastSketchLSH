@@ -15,6 +15,7 @@ FastSketchLSH::FastSketchLSH(float threshold, size_t sketch_size, size_t bands, 
 
 
 void FastSketchLSH::insert(const std::string& key, const std::vector<int>& set) {
+    //split and insert sketches into buckets
     auto sketch = sketcher.sketch(set);
     for (size_t b = 0; b < bands; ++b) {
         size_t start = b * rows_per_band;
@@ -39,6 +40,7 @@ void FastSketchLSH::insert(const std::string& key, const std::vector<std::string
 }
 
 std::vector<std::string> FastSketchLSH::query(const std::vector<int>& set) {
+    //query for similar set in buckets
     auto sketch = sketcher.sketch(set);
     std::unordered_set<std::string> candidates;
     for (size_t b = 0; b < bands; ++b) {

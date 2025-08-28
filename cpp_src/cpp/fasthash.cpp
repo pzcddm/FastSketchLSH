@@ -38,11 +38,14 @@ std::vector<uint64_t> FastSimilaritySketch::sketch(const std::vector<int>& items
     for (size_t i = 0; i < hash_seeds.size(); ++i) {
         const uint64_t seed = hash_seeds[i];
         for (const auto& item : items) {
+            //Generate 128-bit hash value using mmh3
             uint64_t hash_val[2];
             MurmurHash3_x64_128(&item, sizeof(int), seed, hash_val);
+            //First t hashes select buckets by modulo, last t are directly mapped into buckets
             size_t b = (i < sketch_size) ? (hash_val[0] % sketch_size) : (i - sketch_size);
             uint64_t mixed = ((hash_val[0] >> 12) ^ hash_val[0]) & MASK;
             uint64_t v = (static_cast<uint64_t>(i) << SHIFT) | mixed;
+            //Each bucket only stores a 64-bit integer
             if (v < S[b]) {
                 S[b] = v;
                 if (!filled_bins[b]) {
@@ -81,6 +84,7 @@ std::vector<uint64_t> FastSimilaritySketch::sketch(const std::vector<std::string
                 }
             }
         }
+        //early-stop
         if (filled_cnt == sketch_size) break;
     }
     return S;
@@ -95,7 +99,7 @@ int main(){
         A.push_back(i);
     }
 
-    int t = 128; // 2 的幂：64/128/512 都 OK
+    int t = 128; // Power of 2: 64/128/512 are all OK
     FastSimilaritySketch sk(t, 42);
     auto v = sk.sketch(A);
 
