@@ -17,16 +17,18 @@ static inline uint64_t INF_KEY() { return ~0ull; }     // Infinity marker for em
 
 // Utility function declarations
 uint64_t pack_key(uint64_t i, uint64_t h52);
-__m512i pack_key_vec(uint64_t i, __m512i h52);
 uint64_t fnv1a64(const uint8_t* p, size_t n);
 uint64_t fxhash64(const uint8_t* p, size_t n);
 uint64_t hash_int32(uint32_t x);
 uint64_t splitmix64(uint64_t x);
-__m512i splitmix64_vec(__m512i x);
-  // Hash 8 uint32 values into 8 uint64 using AVX-512 (declared for testing)
-  void hash_int32x8_to_u64_avx512(const uint32_t* src, uint64_t* dst);
 bool all_filled_avx512(const uint64_t* S, int t);
 void warm_cache(uint64_t* S, int t);
+
+#if defined(__AVX512F__)
+__m512i pack_key_vec(uint64_t i, __m512i h52);
+__m512i splitmix64_vec(__m512i x);
+// Hash 8 uint32 values into 8 uint64 using AVX-512 (declared for testing)
+void hash_int32x8_to_u64_avx512(const uint32_t* src, uint64_t* dst);
 void round1_block_avx512_no_reduce(
     const uint64_t* base_block, int nlanes,
     uint64_t round_i, uint64_t seed_i,
@@ -39,6 +41,7 @@ void round1_block_avx512_no_reduce(
     const __m512i& maskv,
     const __m512i& hiv,
     const __m512i& h52maskv);
+#endif
 
 // ===================== Inline definitions for benchmarking =====================
 // These are provided inline so that standalone benchmarks can use the same
@@ -90,7 +93,7 @@ inline uint64_t splitmix64(uint64_t x){
     return x ^ (x >> 31);
 }
 
-#ifdef FASTHASH_SIMD_ENABLE_AVX512_INLINE
+#if defined(FASTHASH_SIMD_ENABLE_AVX512_INLINE) && defined(__AVX512F__)
 // Use constants hoisted in the TU implementation when inlined is not needed.
 inline __m512i splitmix64_vec(__m512i x){
     const __m512i C1 = _mm512_set1_epi64(0x9E3779B97F4A7C15ull);
