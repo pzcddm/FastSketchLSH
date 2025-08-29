@@ -26,7 +26,6 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from typing import List, Tuple, Iterable
 
-from FastSketchLSH import FastSimilaritySketchSIMD
 from FastSketchLSH import FastSimilaritySketch
 from src.datasketch_sketch import DatasketchMinHashSketch
 from src.cmins_sketch import CMinHashSketch
@@ -45,8 +44,8 @@ class SketchComparison:
     def __init__(self):
         # self.k_values = [32, 64, 128, 256, 512]
         # self.n_values = [100, 2500, 5000, 10000, 20000]
-        self.k_values = [64, 128, 256]
-        self.n_values = [100, 300, 1000, 5000, 10000]
+        self.k_values = [ 128, 256]
+        self.n_values = [30, 50, 100, 300, 1000, 5000, 10000]
         self.results = []
 
     def generate_test_sets(self, n: int, overlap_ratio: float = 0.5, trial: int = 0) -> Tuple[set, set]:
@@ -113,8 +112,7 @@ class SketchComparison:
             encoded_b = [x.encode('utf-8') for x in str_b]
             
             # Test FastSimilaritySketch (SIMD expects integers)
-            fast_sketcher = FastSimilaritySketchSIMD(sketch_size=k)
-            # fast_sketcher = FastSimilaritySketch(sketch_size=k)
+            fast_sketcher = FastSimilaritySketch(sketch_size=k)
 
             # sketch_a, time_a = self.time_sketch_generation(fast_sketcher, int_a)
             # sketch_b, time_b = self.time_sketch_generation(fast_sketcher, int_b)

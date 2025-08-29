@@ -1,5 +1,5 @@
-#ifndef FAST_SIMILARITY_SKETCH_AVX512_PACKED_H
-#define FAST_SIMILARITY_SKETCH_AVX512_PACKED_H
+#ifndef FAST_SIMILARITY_SKETCH_H
+#define FAST_SIMILARITY_SKETCH_H
 
 #include <immintrin.h>
 #include <cstdint>
@@ -7,9 +7,6 @@
 #include <string>
 #include <stdexcept>
 #include <cstring>
-
-// TODO: Can we pick a SIMD friendly Hash method? Not fnv1a64?
-// TODO (Maybe): Test scatter and gather in line 100 - 111 (逐lane 更新) 但是得处理冲突情况
 
 // ===================== Public constants and utilities =====================
 static constexpr int I_BITS = 12;                      // Number of bits used for round index i (supports up to 4095)
@@ -117,7 +114,8 @@ inline void hash_int32x8_to_u64_avx512(const uint32_t* src, uint64_t* dst) {
 #endif
 
 // ===================== Main class declaration =====================
-struct FastSimilaritySketchAVX512Packed {
+class FastSimilaritySketch {
+public:
     int t;
     uint64_t t_mask;                // t-1 (t must be a power of two)
     std::vector<uint64_t> seeds;    // 2*t seeds
@@ -129,10 +127,14 @@ struct FastSimilaritySketchAVX512Packed {
     alignas(64) uint64_t h_lane_buf[8];
     alignas(64) uint64_t b_lane_buf[8];
     alignas(64) uint64_t key_lane_buf[8];
+    // Last computed digest for compatibility with LSH Rensa
+    std::vector<uint64_t> last_digest;
 
-    explicit FastSimilaritySketchAVX512Packed(int sketch_size, uint64_t random_seed=42);
+    explicit FastSimilaritySketch(int sketch_size, uint64_t random_seed=42);
     // Input changed to vector<uint32_t> for SIMD-friendly zero-extension
     std::vector<uint64_t> sketch(const std::vector<uint32_t>& A);
+    // Compatibility overload for legacy int vectors
+    std::vector<uint64_t> sketch(const std::vector<int>& A);
     // Instrumented overload: returns per-phase timings (ms) if pointers are non-null
     std::vector<uint64_t> sketch(const std::vector<uint32_t>& A,
                                  double* prehash_ms,
@@ -145,6 +147,10 @@ struct FastSimilaritySketchAVX512Packed {
                                  double* prehash_ms,
                                  double* phase1_ms,
                                  double* phase2_ms);
+
+    // Access last computed digest (for LSH Rensa compatibility)
+    const std::vector<uint64_t>& digest() const noexcept { return last_digest; }
 };
 
-#endif // FAST_SIMILARITY_SKETCH_AVX512_PACKED_H
+#endif // FAST_SIMILARITY_SKETCH_H
+

@@ -2,16 +2,14 @@
   FastSketchLSH Python↔C++ boundary optimizations (2025-08):
 
   - NumPy zero-copy fast paths (numeric):
-    CMinSketch::sketch(np.int32), RMinSketch::sketch(np.int32),
-    FastSimilaritySketch::sketch(np.int32),
-    FastSimilaritySketchSIMD::sketch(np.uint32 | np.int32),
+    RMinSketch::sketch(np.int32),
+    FastSimilaritySketch::sketch(np.uint32 | np.int32),
     FastSketchLSH::insert/query(np.int32).
     Requirements: 1-D arrays. Reading uses buffer access (no per-element boxing),
     compute runs under GIL release.
 
   - Bytes/memoryview fast paths (text/bytes-like):
     FastSimilaritySketch::{sketch(list[bytes]), sketch_buffers(list[memoryview|bytes])},
-    FastSimilaritySketchSIMD::{sketch(list[bytes]), sketch_buffers(...)},
     FastSketchLSH::{insert, query}(list[bytes] | list[str]).
     list[bytes]/memoryview uses PyBytes_AsStringAndSize or buffer protocol to avoid copies.
     list[str] remains supported (back-compat); bytes is fastest.
@@ -29,6 +27,10 @@
 
   - Windows compatibility:
     Adds ssize_t typedef and buffer handling fixes.
+
+  - Deprecated:
+    Scalar legacy implementation preserved as FastSimilaritySketchDeprecated (C++ only);
+    not exposed to Python.
 */
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -39,10 +41,8 @@
 #include <BaseTsd.h>
 typedef SSIZE_T ssize_t;
 #endif
-#include "../include/cminhash.h"
 #include "../include/rminhash.h"
-#include "../include/fasthash.h"
-#include "../include/fasthash_simd.h"
+#include "../include/fastsketch.h"
 #include "../include/fastsketch_lsh.h"
 #include "../include/fastsketch_rensa_lsh.h"
 
@@ -120,46 +120,7 @@ inline std::vector<std::string> buffer_list_to_vector_zerocopy(py::list items) {
 PYBIND11_MODULE(FastSketchLSH, m) {
     m.attr("__version__") = "0.2.0";
 
-    py::class_<CMinSketch>(m, "CMinSketch")
-        .def(py::init<size_t, uint32_t>(),
-             py::arg("num_perm") = 128,
-             py::arg("seed") = 42,
-             "Initialize CMinHash with:\n"
-             "  num_perm: Number of permutations (default=128)\n"
-             "  seed: Random seed (0 to 0xFFFFFFFF, default=42)")
-        
-        // Optimized NumPy array sketch method (zero-copy, GIL release)
-        .def("sketch", [](CMinSketch& self, py::array_t<int32_t> arr) {
-            if (arr.size() == 0) {
-                throw py::value_error("Array cannot be empty");
-            }
-            std::vector<int> int_items = numpy_to_vector_zerocopy<int32_t>(arr);
-            py::gil_scoped_release release;
-            return self.sketch(int_items);
-        }, py::arg("items"),
-          "Compute MinHash signature for NumPy int32 array (optimized zero-copy)")
-        
-        // Fallback iterable sketch method (backward compatibility)
-        .def("sketch", [](CMinSketch& self, py::iterable items) {
-            if (items.is_none() || py::len(items) == 0) {
-                  throw py::value_error("Items cannot be empty");
-              }
-            std::vector<int> int_items;
-            for (auto item : items) {
-                try {
-                    int_items.push_back(py::cast<int>(item));
-                } catch (const py::cast_error&) {
-                    throw py::value_error(
-                      "CMinSketch.sketch() requires all items to be integers. "
-                      "Use CMinSketch for string inputs.");
-                }
-            }
-            py::gil_scoped_release release;
-            return self.sketch(int_items);
-        }, py::arg("items"),
-          "Compute MinHash signature for integer sets using CMinSketch algorithm");
-
-// KMinSketch removed
+    // CMinSketch removed (deprecated)
 
     py::class_<RMinSketch>(m, "RMinSketch")
       .def( py::init<size_t, uint32_t>(),
@@ -200,24 +161,45 @@ PYBIND11_MODULE(FastSketchLSH, m) {
       }, py::arg("items"),
         "Compute MinHash signature for integer sets using RMinSketch algorithm");
 
+    // Note: FastSimilaritySketch (scalar) bindings have been deprecated and removed from Python.
+
     py::class_<FastSimilaritySketch>(m, "FastSimilaritySketch")
-      .def( py::init<size_t, uint32_t>(),
+      .def( py::init<size_t, uint64_t>(),
             py::arg("sketch_size") = 128,
             py::arg("seed") = 42,
             "Initialize FastSimilaritySketch with:\n"
             "  sketch_size: Number of sketch\n"
             "  seed: Random seed (0 to 0xFFFFFFFF, default=42)")
 
-      // Optimized NumPy array sketch method for integers (zero-copy, GIL release)
+      // Optimized NumPy array sketch method for uint32 (zero-copy, GIL release)
+      .def("sketch", [](FastSimilaritySketch& self, py::array_t<uint32_t> arr) {
+          if (arr.size() == 0) {
+              throw py::value_error("Array cannot be empty");
+          }
+          std::vector<uint32_t> int_items = numpy_to_vector_zerocopy<uint32_t>(arr);
+          py::gil_scoped_release release;
+          return self.sketch(int_items);
+      }, py::arg("items"),
+        "Compute FastSimilaritySketchSIMD for NumPy uint32 array (optimized zero-copy)")
+
+      // Optimized NumPy array sketch method for int32 (zero-copy, GIL release)
       .def("sketch", [](FastSimilaritySketch& self, py::array_t<int32_t> arr) {
           if (arr.size() == 0) {
               throw py::value_error("Array cannot be empty");
           }
-          std::vector<int> int_items = numpy_to_vector_zerocopy<int32_t>(arr);
+          auto int32_items = numpy_to_vector_zerocopy<int32_t>(arr);
+          std::vector<uint32_t> int_items;
+          int_items.reserve(int32_items.size());
+          for (int32_t val : int32_items) {
+              if (val < 0) {
+                  throw py::value_error("FastSimilaritySketchSIMD requires non-negative integers");
+              }
+              int_items.push_back(static_cast<uint32_t>(val));
+          }
           py::gil_scoped_release release;
           return self.sketch(int_items);
       }, py::arg("items"),
-        "Compute FastSimilaritySketch for NumPy int32 array (optimized zero-copy)")
+        "Compute FastSimilaritySketchSIMD for NumPy int32 array (optimized zero-copy, converted to uint32)")
 
       // Optimized list sketch method (supports both bytes and strings)
       .def("sketch", [](FastSimilaritySketch& self, py::list items) {
@@ -251,7 +233,7 @@ PYBIND11_MODULE(FastSketchLSH, m) {
               throw py::value_error("Use sketch(numpy_array) for integers or ensure all items are strings/bytes for this overload");
           }
       }, py::arg("items"),
-        "Compute FastSimilaritySketch for list of strings/bytes (optimized for bytes)")
+        "Compute FastSimilaritySketchSIMD for list of strings/bytes (optimized for bytes)")
 
       // Buffer protocol sketch method for memoryview/bytes (zero-copy, GIL release)
       .def("sketch_buffers", [](FastSimilaritySketch& self, py::list items) {
@@ -262,144 +244,10 @@ PYBIND11_MODULE(FastSketchLSH, m) {
           py::gil_scoped_release release;
           return self.sketch(byte_items);
       }, py::arg("items"),
-        "Compute FastSimilaritySketch for list of buffer objects (memoryview/bytes, optimized zero-copy)")
-
-      // Fallback iterable sketch method (backward compatibility)
-      .def("sketch", [](FastSimilaritySketch& self, py::iterable items) {
-          if (items.is_none() || py::len(items) == 0) {
-              throw py::value_error("Items cannot be empty");
-          }
-          // Collect items once so we can check the first element to pick a path
-          std::vector<py::object> objs;
-          objs.reserve(py::len(items));
-          for (auto item : items) {
-              objs.emplace_back(py::reinterpret_borrow<py::object>(item));
-          }
-          const py::object& first = objs.front();
-
-          const bool first_is_bytes_like = py::isinstance<py::bytes>(first)
-                                        || py::isinstance<py::str>(first)
-                                        || py::hasattr(first, "__bytes__");
-
-          if (first_is_bytes_like) {
-              std::vector<std::string> byte_items;
-              byte_items.reserve(objs.size());
-              for (const auto& obj : objs) {
-                  if (py::isinstance<py::bytes>(obj)) {
-                      byte_items.emplace_back(py::cast<std::string>(obj));
-                  } else if (py::isinstance<py::str>(obj)) {
-                      py::bytes b = py::reinterpret_borrow<py::bytes>(py::str(obj).attr("encode")("utf-8"));
-                      byte_items.emplace_back(py::cast<std::string>(b));
-                  } else if (py::hasattr(obj, "__bytes__")) {
-                      py::bytes b = py::reinterpret_borrow<py::bytes>(obj.attr("__bytes__")());
-                      byte_items.emplace_back(py::cast<std::string>(b));
-                  } else {
-                      throw py::value_error("All items must be bytes-like or str when the first is string-like.");
-                  }
-              }
-              py::gil_scoped_release release;
-              return self.sketch(byte_items);
-          } else {
-              std::vector<int> int_items;
-              int_items.reserve(objs.size());
-              for (const auto& obj : objs) {
-                  try {
-                      int_items.push_back(py::cast<int>(obj));
-                  } catch (const py::cast_error&) {
-                      throw py::value_error("All items must be integers when the first is not string-like.");
-                  }
-              }
-              py::gil_scoped_release release;
-              return self.sketch(int_items);
-          }
-      }, py::arg("items"),
-        "Compute FastSimilaritySketch for: if first item is string-like (str/bytes/bytes-like) hash as bytes; otherwise cast all items to int");
-
-    py::class_<FastSimilaritySketchAVX512Packed>(m, "FastSimilaritySketchSIMD")
-      .def( py::init<size_t, uint64_t>(),
-            py::arg("sketch_size") = 128,
-            py::arg("seed") = 42,
-            "Initialize FastSimilaritySketchSIMD with:\n"
-            "  sketch_size: Number of sketch\n"
-            "  seed: Random seed (0 to 0xFFFFFFFF, default=42)")
-
-      // Optimized NumPy array sketch method for uint32 (zero-copy, GIL release)
-      .def("sketch", [](FastSimilaritySketchAVX512Packed& self, py::array_t<uint32_t> arr) {
-          if (arr.size() == 0) {
-              throw py::value_error("Array cannot be empty");
-          }
-          std::vector<uint32_t> int_items = numpy_to_vector_zerocopy<uint32_t>(arr);
-          py::gil_scoped_release release;
-          return self.sketch(int_items);
-      }, py::arg("items"),
-        "Compute FastSimilaritySketchSIMD for NumPy uint32 array (optimized zero-copy)")
-
-      // Optimized NumPy array sketch method for int32 (zero-copy, GIL release)
-      .def("sketch", [](FastSimilaritySketchAVX512Packed& self, py::array_t<int32_t> arr) {
-          if (arr.size() == 0) {
-              throw py::value_error("Array cannot be empty");
-          }
-          auto int32_items = numpy_to_vector_zerocopy<int32_t>(arr);
-          std::vector<uint32_t> int_items;
-          int_items.reserve(int32_items.size());
-          for (int32_t val : int32_items) {
-              if (val < 0) {
-                  throw py::value_error("FastSimilaritySketchSIMD requires non-negative integers");
-              }
-              int_items.push_back(static_cast<uint32_t>(val));
-          }
-          py::gil_scoped_release release;
-          return self.sketch(int_items);
-      }, py::arg("items"),
-        "Compute FastSimilaritySketchSIMD for NumPy int32 array (optimized zero-copy, converted to uint32)")
-
-      // Optimized list sketch method (supports both bytes and strings)
-      .def("sketch", [](FastSimilaritySketchAVX512Packed& self, py::list items) {
-          if (items.size() == 0) {
-              throw py::value_error("List cannot be empty");
-          }
-          
-          // Check if first item is bytes for fast path
-          auto first_item = items[0];
-          if (py::isinstance<py::bytes>(first_item)) {
-              // Fast path for bytes objects
-              std::vector<std::string> byte_items = bytes_list_to_vector_zerocopy(items);
-              py::gil_scoped_release release;
-              return self.sketch(byte_items);
-          } else if (py::isinstance<py::str>(first_item)) {
-              // Handle string lists (backward compatibility)
-              std::vector<std::string> str_items;
-              str_items.reserve(items.size());
-              for (auto item : items) {
-                  if (py::isinstance<py::str>(item)) {
-                      str_items.push_back(py::cast<std::string>(item));
-                  } else if (py::isinstance<py::bytes>(item)) {
-                      str_items.push_back(py::cast<std::string>(item));
-                  } else {
-                      throw py::value_error("All items must be strings or bytes");
-                  }
-              }
-              py::gil_scoped_release release;
-              return self.sketch(str_items);
-          } else {
-              throw py::value_error("Use sketch(numpy_array) for integers or ensure all items are strings/bytes for this overload");
-          }
-      }, py::arg("items"),
-        "Compute FastSimilaritySketchSIMD for list of strings/bytes (optimized for bytes)")
-
-      // Buffer protocol sketch method for memoryview/bytes (zero-copy, GIL release)
-      .def("sketch_buffers", [](FastSimilaritySketchAVX512Packed& self, py::list items) {
-          if (items.size() == 0) {
-              throw py::value_error("List cannot be empty");
-          }
-          std::vector<std::string> byte_items = buffer_list_to_vector_zerocopy(items);
-          py::gil_scoped_release release;
-          return self.sketch(byte_items);
-      }, py::arg("items"),
         "Compute FastSimilaritySketchSIMD for list of buffer objects (memoryview/bytes, optimized zero-copy)")
 
       // Fallback iterable sketch method (backward compatibility)
-      .def("sketch", [](FastSimilaritySketchAVX512Packed& self, py::iterable items) {
+      .def("sketch", [](FastSimilaritySketch& self, py::iterable items) {
           if (items.is_none() || py::len(items) == 0) {
               throw py::value_error("Items cannot be empty");
           }

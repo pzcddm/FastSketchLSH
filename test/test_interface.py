@@ -2,7 +2,7 @@
 """
 测试 Python↔C++ 边界优化效果（仅 SIMD 路径）
 
-本脚本仅验证 FastSimilaritySketchSIMD 的优化路径：
+本脚本仅验证 FastSimilaritySketch 的优化路径：
 - 数值：支持 np.uint32 与 np.int32（后者自动转换为 uint32）
 - 文本：支持 list[str]、list[bytes]、list[memoryview]（buffer 协议）
 """
@@ -31,14 +31,14 @@ def benchmark_function(func, *args, **kwargs):
     return result, end_time - start_time
 
 def test_fastsketchsimd_optimizations():
-    """测试 FastSimilaritySketchSIMD 优化"""
-    print("\n=== FastSimilaritySketchSIMD 优化测试 ===")
+    """测试 FastSimilaritySketch 优化"""
+    print("\n=== FastSimilaritySketch 优化测试 ===")
     
     # 测试不同数据类型
     uint32_data = np.random.randint(0, 100000, size=5000, dtype=np.uint32)
     int32_data = np.random.randint(0, 100000, size=5000, dtype=np.int32)
     
-    simd_sketch = FastSketchLSH.FastSimilaritySketchSIMD(sketch_size=128)
+    simd_sketch = FastSketchLSH.FastSimilaritySketch(sketch_size=128)
     
     # 测试 uint32
     result1, time1 = benchmark_function(simd_sketch.sketch, uint32_data)
@@ -51,15 +51,15 @@ def test_fastsketchsimd_optimizations():
     print(f"✅ SIMD 优化正常工作")
 
 def test_fastsketchsimd_text_inputs():
-    """测试 FastSimilaritySketchSIMD 的字符串/bytes/buffer 输入路径"""
-    print("\n=== FastSimilaritySketchSIMD 文本输入测试 ===")
+    """测试 FastSimilaritySketch 的字符串/bytes/buffer 输入路径"""
+    print("\n=== FastSimilaritySketch 文本输入测试 ===")
     
     # 构造可比较的数据
     str_data = [f"item_{i}" for i in range(5000)]
     bytes_data = [s.encode("utf-8") for s in str_data]
     buffers = [memoryview(b) for b in bytes_data]
     
-    simd_sketch = FastSketchLSH.FastSimilaritySketchSIMD(sketch_size=128)
+    simd_sketch = FastSketchLSH.FastSimilaritySketch(sketch_size=128)
     
     # list[str]
     sketch_str, t_str = benchmark_function(simd_sketch.sketch, str_data)

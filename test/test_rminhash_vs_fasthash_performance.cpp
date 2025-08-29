@@ -1,8 +1,8 @@
-//! Performance comparison test between RMinHashSIMD and FastSimilaritySketchAVX512Packed
+//! Performance comparison test between RMinHashSIMD and FastSimilaritySketch
 //! 
 //! This test compares the performance and accuracy of two different sketch algorithms:
 //! - RMinHashSIMD: Optimized R-MinHash implementation mimicking Rust code
-//! - FastSimilaritySketchAVX512Packed: Existing fast sketch implementation
+//! - FastSimilaritySketch: Existing fast sketch implementation
 //!
 //! The test measures:
 //! - Sketch computation time for both uint32_t and string inputs
@@ -11,7 +11,7 @@
 //! - Scalability with different input sizes and sketch sizes
 
 #include "rminhash.h"
-#include "fasthash_simd.h"
+#include "fastsketch.h"
 #include <iostream>
 #include <vector>
 #include <string>
@@ -207,7 +207,7 @@ PerformanceResult test_fasthash_uint32(const vector<uint32_t>& set_a,
     size_t power_of_2_size = 1;
     while (power_of_2_size < sketch_size) power_of_2_size *= 2;
     
-    FastSimilaritySketchAVX512Packed sketcher(static_cast<int>(power_of_2_size), 42);
+    FastSimilaritySketch sketcher(static_cast<int>(power_of_2_size), 42);
     
     // Test set A
     double prehash_a = 0, phase1_a = 0, phase2_a = 0;
@@ -281,7 +281,7 @@ PerformanceResult test_fasthash_strings(const vector<string>& set_a,
     size_t power_of_2_size = 1;
     while (power_of_2_size < sketch_size) power_of_2_size *= 2;
     
-    FastSimilaritySketchAVX512Packed sketcher(static_cast<int>(power_of_2_size), 42);
+    FastSimilaritySketch sketcher(static_cast<int>(power_of_2_size), 42);
     
     // Test set A
     double prehash_a = 0, phase1_a = 0, phase2_a = 0;
@@ -456,7 +456,7 @@ void run_scalability_test() {
 }
 
 int main() {
-    cout << "Performance Comparison: RMinHashSIMD vs FastSimilaritySketchAVX512Packed\n";
+    cout << "Performance Comparison: RMinHashSIMD vs FastSimilaritySketch\n";
     cout << "========================================================================\n";
     
     try {

@@ -66,10 +66,12 @@ if pybind11_available:
     ext_modules.append(Extension(
         'FastSketchLSH',
         sources=[
-            'cpp/cminhash.cpp',
+            # 'cpp/cminhash.cpp',
             "cpp/rminhash.cpp",
-            "cpp/fasthash.cpp",
-            "cpp/fasthash_simd.cpp",
+            # scalar fasthash is deprecated; keep file for review only, exclude from wheel
+            # "cpp/fasthash.cpp",
+            "cpp/fasthash_deprecated.cpp",
+            "cpp/fastsketch.cpp",
             'cpp/murmurhash3.cpp',
             'cpp/fastsketch_lsh.cpp',
             'cpp/fastsketch_rensa_lsh.cpp',

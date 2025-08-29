@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 import mmh3
 import heapq
 
-from FastSketchLSH import FastSimilaritySketchSIMD, FastSimilaritySketch
+from FastSketchLSH import FastSimilaritySketch
 from simulation.util import estimate_jaccard, actual_jaccard
 
 
@@ -18,7 +18,7 @@ if __name__ == '__main__':
     print(f"True Jaccard: {true_j:.4f}")
 
     # Integer path via SIMD implementation
-    sketcher_simd = FastSimilaritySketchSIMD(sketch_size=t, seed=77787)
+    sketcher_simd = FastSimilaritySketch(sketch_size=t, seed=77787)
     print("[SIMD/int] Generating sketches...")
     S_A = sketcher_simd.sketch(A)
     S_B = sketcher_simd.sketch(B)

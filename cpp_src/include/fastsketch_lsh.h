@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include "fasthash.h"
+#include "fastsketch.h"
 
 class FastSketchLSH {
 private:

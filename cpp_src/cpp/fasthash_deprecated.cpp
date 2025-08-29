@@ -1,3 +1,10 @@
+// Deprecated: This file contains the legacy scalar FastSimilaritySketch implementation.
+// It remains for archival/review purposes and internal C++ use, but is no longer
+// exposed through the Python bindings.
+//
+// Note: The class is marked [[deprecated]] in the public header to surface
+// compile-time warnings for new C++ uses.
+
 #include "../include/fasthash.h"
 #include "../include/murmurhash.h"
 #include <stdexcept>
@@ -7,7 +14,7 @@
 using namespace std;
 
 
-FastSimilaritySketch::FastSimilaritySketch(size_t sketch_size, uint32_t random_seed) {
+FastSimilaritySketchDeprecated::FastSimilaritySketchDeprecated(size_t sketch_size, uint32_t random_seed) {
     if (sketch_size == 0) {
         throw std::invalid_argument("Sketch size (t) must be positive");
     }
@@ -27,7 +34,7 @@ FastSimilaritySketch::FastSimilaritySketch(size_t sketch_size, uint32_t random_s
 }
 
 
-std::vector<uint64_t> FastSimilaritySketch::sketch(const std::vector<int>& items) {
+std::vector<uint64_t> FastSimilaritySketchDeprecated::sketch(const std::vector<int>& items) {
     constexpr uint64_t SHIFT = 52;
     constexpr uint64_t MASK  = (uint64_t(1) << SHIFT) - 1;
 
@@ -60,7 +67,7 @@ std::vector<uint64_t> FastSimilaritySketch::sketch(const std::vector<int>& items
 }
 
 // Overload for byte-string inputs
-std::vector<uint64_t> FastSimilaritySketch::sketch(const std::vector<std::string>& items) {
+std::vector<uint64_t> FastSimilaritySketchDeprecated::sketch(const std::vector<std::string>& items) {
     constexpr uint64_t SHIFT = 52;
     constexpr uint64_t MASK  = (uint64_t(1) << SHIFT) - 1;
 
@@ -99,8 +106,8 @@ int main(){
         A.push_back(i);
     }
 
-    int t = 128; // Power of 2: 64/128/512 are all OK
-    FastSimilaritySketch sk(t, 42);
+    int t = 128; // 2^k: 64/128/512 are OK
+    FastSimilaritySketchDeprecated sk(t, 42);
     auto v = sk.sketch(A);
 
     std::cout << "sketch size = " << v.size() << "\nfirst 8 hash values:\n";
@@ -108,3 +115,5 @@ int main(){
     return 0;
 }
 #endif
+
+

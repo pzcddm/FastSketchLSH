@@ -7,7 +7,6 @@ pip install .
 # Usage Example
 ```python
 from FastSketchLSH import FastSimilaritySketch
-from FastSketchLSH import FastSimilaritySketchSIMD
 
 def estimate_jaccard(sketch1, sketch2):
     if len(sketch1) != len(sketch2):
@@ -20,7 +19,6 @@ if __name__ == '__main__':
     A = set(range(0, 1000))
     B = set(range(500, 1500))
     sketcher = FastSimilaritySketch(sketch_size=t)
-    # sketcher = FastSimilaritySketchSIMD(sketch_size=t)
     S_A = sketcher.sketch(A)
     S_B = sketcher.sketch(B)
     est_j = estimate_jaccard(S_A, S_B)

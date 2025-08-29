@@ -4,6 +4,7 @@
 #include <vector>
 #include <unordered_map>
 #include "fasthash.h"
+#include "fastsketch.h"
 
 class FastSketchLSHRensa {
 public:

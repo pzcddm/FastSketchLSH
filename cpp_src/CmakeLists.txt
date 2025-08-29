@@ -14,7 +14,7 @@ endif()
 option(ENABLE_AVX2 "Enable AVX2 instructions" ON)
 option(ENABLE_SSE4 "Enable SSE4.2 instructions" ON)
 option(ENABLE_NEON "Enable ARM NEON instructions" OFF)
-option(ENABLE_AVX512 "Enable AVX-512 instructions (fasthash_simd.cpp)" ON)
+option(ENABLE_AVX512 "Enable AVX-512 instructions (fastsketch.cpp)" ON)
 option(FASTSKETCH_USE_FXHASH "Use FxHasher-style prehash for strings" ON)
 
 if(ENABLE_AVX2)
@@ -32,10 +32,11 @@ find_package(pybind11 QUIET)
 
 # Core library target (core sources, excluding a separate AVX-512 TU)
 set(FASTSKETCH_CORE_SRCS
-    cpp/cminhash.cpp
     cpp/rminhash.cpp
-    cpp/fasthash.cpp
-    cpp/fasthash_simd.cpp
+    # fasthash scalar implementation is deprecated; keep source for archival only
+    # cpp/fasthash.cpp
+    cpp/fasthash_deprecated.cpp
+    cpp/fastsketch.cpp
     cpp/murmurhash3.cpp
     cpp/fastsketch_lsh.cpp
     cpp/fastsketch_rensa_lsh.cpp
@@ -46,16 +47,16 @@ target_include_directories(FastSketchLSH_core PUBLIC include)
 
 # Add AVX-512 source on demand and set per-file compile options
 if(ENABLE_AVX512)
-    target_sources(FastSketchLSH_core PRIVATE cpp/fasthash_simd.cpp)
+    target_sources(FastSketchLSH_core PRIVATE cpp/fastsketch.cpp)
     if(MSVC)
-        # Enable /arch:AVX512 only for fasthash_simd.cpp
-        set_source_files_properties(cpp/fasthash_simd.cpp PROPERTIES COMPILE_OPTIONS "/arch:AVX512")
+        # Enable /arch:AVX512 only for fastsketch.cpp
+        set_source_files_properties(cpp/fastsketch.cpp PROPERTIES COMPILE_OPTIONS "/arch:AVX512")
     else()
         # Enable AVX-512 instruction set only for this TU
-        set_source_files_properties(cpp/fasthash_simd.cpp PROPERTIES COMPILE_OPTIONS "-mavx512f;-mavx512dq;-mavx512vl")
+        set_source_files_properties(cpp/fastsketch.cpp PROPERTIES COMPILE_OPTIONS "-mavx512f;-mavx512dq;-mavx512vl")
     endif()
 else()
-    message(WARNING "ENABLE_AVX512=OFF; skipping cpp/fasthash_simd.cpp (SIMD sketch will be unavailable)")
+    message(WARNING "ENABLE_AVX512=OFF; skipping cpp/fastsketch.cpp (SIMD sketch will be unavailable)")
 endif()
 
 # Python module (build if pybind11 is found, otherwise skip)

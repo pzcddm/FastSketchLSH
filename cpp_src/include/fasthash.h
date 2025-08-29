@@ -1,5 +1,5 @@
-#ifndef FAST_SIMILARITY_SKETCH_H
-#define FAST_SIMILARITY_SKETCH_H
+#ifndef FAST_SIMILARITY_SKETCH_DEPRECATED_H
+#define FAST_SIMILARITY_SKETCH_DEPRECATED_H
 
 #include <vector>
 #include <string>
@@ -9,14 +9,14 @@
 #include <algorithm>
 #include <functional>
 
-class FastSimilaritySketch {
+class [[deprecated("Scalar implementation is deprecated; use FastSimilaritySketch from fastsketch.h instead")]] FastSimilaritySketchDeprecated {
 private:
     size_t sketch_size;  // Sketch size
     std::vector<uint64_t> hash_seeds;  // 2t hash seeds
     std::vector<uint64_t> S;
 
 public:
-    FastSimilaritySketch(size_t sketch_size, uint32_t random_seed = 42);
+    FastSimilaritySketchDeprecated(size_t sketch_size, uint32_t random_seed = 42);
 
     std::vector<uint64_t> sketch(const std::vector<int>& items);
 
@@ -26,4 +26,4 @@ public:
     const std::vector<uint64_t>& digest() const noexcept {return S;}
 };
 
-#endif // FAST_SIMILARITY_SKETCH_H
+#endif // FAST_SIMILARITY_SKETCH_DEPRECATED_H
