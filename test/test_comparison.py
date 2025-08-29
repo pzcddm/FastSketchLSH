@@ -109,14 +109,19 @@ class SketchComparison:
             str_a = [str(x) for x in int_a]
             str_b = [str(x) for x in int_b]
 
+            encoded_a = [x.encode('utf-8') for x in str_a]
+            encoded_b = [x.encode('utf-8') for x in str_b]
+            
             # Test FastSimilaritySketch (SIMD expects integers)
-            # fast_sketcher = FastSimilaritySketchSIMD(sketch_size=k)
-            fast_sketcher = FastSimilaritySketch(sketch_size=k)
+            fast_sketcher = FastSimilaritySketchSIMD(sketch_size=k)
+            # fast_sketcher = FastSimilaritySketch(sketch_size=k)
 
             # sketch_a, time_a = self.time_sketch_generation(fast_sketcher, int_a)
             # sketch_b, time_b = self.time_sketch_generation(fast_sketcher, int_b)
-            sketch_a, time_a = self.time_sketch_generation(fast_sketcher, str_a)
-            sketch_b, time_b = self.time_sketch_generation(fast_sketcher, str_b)
+            sketch_a, time_a = self.time_sketch_generation(fast_sketcher, encoded_a)
+            sketch_b, time_b = self.time_sketch_generation(fast_sketcher, encoded_b)
+            # sketch_a, time_a = self.time_sketch_generation(fast_sketcher, str_a)
+            # sketch_b, time_b = self.time_sketch_generation(fast_sketcher, str_b)
             fast_total_time = time_a + time_b
             fast_estimated = estimate_jaccard(sketch_a, sketch_b)
             fast_error = abs(true_jaccard - fast_estimated)

@@ -484,13 +484,13 @@ vector<uint64_t> FastSimilaritySketchAVX512Packed::sketch(const vector<string>& 
 // To compile this file you can use this command to test it:
 // g++ -O3 -std=c++17 -mavx512f -mavx512dq -mavx512vl -DDEMO_MAIN cpp_src/cpp/fasthash_simd.cpp -Icpp_src/include -o demo_fasthash_simd.exe
 int main(){
-    // Generate two integer sets:
-    // A = {0, 1, ..., 7499}
-    // B = {2500, 2501, ..., 9999}
-    vector<uint32_t> A; A.reserve(7500);
-    for (uint32_t i = 0; i < 7500u; ++i) A.push_back(i);
-    vector<uint32_t> B; B.reserve(7500);
-    for (uint32_t i = 2500u; i < 10000u; ++i) B.push_back(i);
+    // Generate two integer sets for testing
+    // A = {0, 1, ..., 1000}  
+    // B = {500, 501, ..., 1500}
+    vector<uint32_t> A; A.reserve(1001);
+    for (uint32_t i = 0; i <= 1000u; ++i) A.push_back(i);
+    vector<uint32_t> B; B.reserve(1001);
+    for (uint32_t i = 500u; i <= 1500u; ++i) B.push_back(i);
 
     // Compute true Jaccard via two-pointer merge (both vectors are sorted)
     int inter = 0;
@@ -503,7 +503,7 @@ int main(){
     const int uni = static_cast<int>(A.size() + B.size() - inter);
     const double j_true = uni > 0 ? static_cast<double>(inter) / static_cast<double>(uni) : 0.0;
 
-    const int t = 256;      // sketch size (power of two, <= 4096)
+    const int t = 128;      // sketch size (power of two, <= 4096)
     const int trials = 50;  // number of repetitions with different random seeds
 
     std::random_device rd;
