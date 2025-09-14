@@ -28,8 +28,8 @@ if os.getenv('FASTSKETCH_USE_FXHASH') in {"1", "ON", "on", "true", "TRUE", "Yes"
 
 system_name = platform.system()
 
-# Baseline flags: no forced AVX so wheels run on older CPUs. We'll detect
-# CPU+compiler capabilities in a custom build_ext and append AVX flags.
+# Baseline flags: no forced x86 ISA so wheels run on older CPUs. We'll detect
+# x86 CPU+compiler capabilities in a custom build_ext and append AVX-512 flags.
 if system_name == "Windows":
     compile_args = ["/std:c++17", "/fp:fast", "/Oi"]
 elif system_name == "Darwin":
@@ -120,49 +120,42 @@ class BuildExt(build_ext):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
     def build_extensions(self):
-        # Env overrides
+        # Env overrides (x86 only)
         force_avx512 = env_truthy("FASTSKETCH_FORCE_AVX512")
         disable_avx512 = env_truthy("FASTSKETCH_DISABLE_AVX512")
-        force_avx2 = env_truthy("FASTSKETCH_FORCE_AVX2")
-        disable_avx2 = env_truthy("FASTSKETCH_DISABLE_AVX2")
 
         is_msvc = self.compiler.compiler_type == "msvc"
         avx512_flags = ["/arch:AVX512"] if is_msvc else ["-mavx512f", "-mavx512dq", "-mavx512vl"]
-        avx2_flags = ["/arch:AVX2"] if is_msvc else ["-mavx2", "-mbmi2", "-msse4.2"]
 
-        # CPU detection using CPUID: AVX512F = EBX bit 16, AVX2 = EBX bit 5
-        cpu_has_avx512 = self.cpu_has_feature_via_cpuid(16)
-        cpu_has_avx2 = self.cpu_has_feature_via_cpuid(5)
-
-        # Compiler support probing
-        compiler_has_avx512 = self.has_compiler_flags(avx512_flags)
-        compiler_has_avx2 = self.has_compiler_flags(avx2_flags)
+        # Only probe AVX-512 on x86/x64
+        machine = platform.machine().lower()
+        is_x86 = any(k in machine for k in ("x86_64", "amd64", "i386", "i686"))
+        cpu_has_avx512 = False
+        compiler_has_avx512 = False
+        if is_x86:
+            cpu_has_avx512 = self.cpu_has_feature_via_cpuid(16)
+            compiler_has_avx512 = self.has_compiler_flags(avx512_flags)
 
         # Decide which flags to add
         use_avx512 = False
-        if not disable_avx512 and (force_avx512 or (cpu_has_avx512 and compiler_has_avx512)):
+        if is_x86 and not disable_avx512 and (force_avx512 or (cpu_has_avx512 and compiler_has_avx512)):
             use_avx512 = True
-        use_avx2 = False
-        if not use_avx512 and not disable_avx2 and (force_avx2 or (cpu_has_avx2 and compiler_has_avx2)):
-            use_avx2 = True
 
         # Emit informative build-time messages
         print("FastSketchLSH build configuration:")
         print(f"  Compiler: {self.compiler.compiler_type}")
-        print(f"  CPU features: AVX512F={'yes' if cpu_has_avx512 else 'no'}, AVX2={'yes' if cpu_has_avx2 else 'no'}")
-        print(f"  Compiler flags supported: AVX512={'yes' if compiler_has_avx512 else 'no'}, AVX2={'yes' if compiler_has_avx2 else 'no'}")
-        if force_avx512 or force_avx2 or disable_avx512 or disable_avx2:
+        print(f"  Host arch: {machine}")
+        if is_x86:
+            print(f"  CPU features: AVX512F={'yes' if cpu_has_avx512 else 'no'}")
+            print(f"  Compiler flags supported: AVX512={'yes' if compiler_has_avx512 else 'no'}")
+        if force_avx512 or disable_avx512:
             print("  Overrides:")
             if force_avx512: print("    FASTSKETCH_FORCE_AVX512=1")
             if disable_avx512: print("    FASTSKETCH_DISABLE_AVX512=1")
-            if force_avx2: print("    FASTSKETCH_FORCE_AVX2=1")
-            if disable_avx2: print("    FASTSKETCH_DISABLE_AVX2=1")
         if use_avx512:
             print("  Selected SIMD: AVX-512 (F/DQ/VL)")
-        elif use_avx2:
-            print("  Selected SIMD: AVX2 (+BMI2/SSE4.2 where available)")
         else:
-            print("  Selected SIMD: baseline (no AVX-specific instructions)")
+            print("  Selected SIMD: baseline/NEON (no x86-only flags)")
 
         for ext in self.extensions:
             # Append ISA flags to existing base flags
@@ -170,8 +163,6 @@ class BuildExt(build_ext):
                 ext.extra_compile_args += avx512_flags
                 # Ensure preprocessor paths for AVX-512-enabled code are visible
                 ext.define_macros = list(getattr(ext, 'define_macros', [])) + [("__AVX512F__", "1")]
-            elif use_avx2:
-                ext.extra_compile_args += avx2_flags
         super().build_extensions()
 
 ext_modules = []
@@ -179,7 +170,6 @@ if pybind11_available:
     ext_modules.append(Extension(
         'FastSketchLSH',
         sources=[
-            # 'cpp/cminhash.cpp',
             "cpp/rminhash.cpp",
             # scalar fasthash is deprecated; keep file for review only, exclude from wheel
             # "cpp/fasthash.cpp",
@@ -199,8 +189,8 @@ if pybind11_available:
 
 setup(
     name='FastSketchLSH',
-    version='0.3.1',
-    description='High-performance MinHash with SIMD acceleration',
+    version='0.3.2',
+    description='High-performance FastSketch with SIMD acceleration to deduplicate large-scale data',
     ext_modules=ext_modules,
     cmdclass={'build_ext': BuildExt},
     license='MIT',

@@ -8,8 +8,9 @@
 //! - Timing instrumentation for performance analysis
 //!
 //! The algorithm follows the design from the Rust implementation while leveraging
-//! C++ SIMD intrinsics for maximum performance.
-
+//! C++ SIMD intrinsics for maximum performance. We want to compare it with our fastsketch so that we can find the best implementation.
+//! The efficiency of this implementation is not as good as rensa
+//! TODO: Need to be investigated.
 #include "../include/rminhash.h"
 #include <stdexcept>
 #include <chrono>

@@ -3,34 +3,22 @@ project(FastSketchLSH LANGUAGES CXX)
 
 # Cross-platform compile options
 if(MSVC)
-    add_compile_options(/arch:AVX2 /std:c++17 /fp:fast)
+    add_compile_options(/std:c++17 /fp:fast)
     add_definitions(-D_USE_MATH_DEFINES -DNOMINMAX)
 else()
-    # Select flags based on architecture to avoid x86-only flags on Apple Silicon/ARM
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i.86")
-        add_compile_options(-mavx2 -mbmi2 -mfma -msse4.2 -std=c++17 -ffast-math)
-    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
-        add_compile_options(-std=c++17 -ffast-math)
-        # Disable AVX-512 on ARM by default
-        set(ENABLE_AVX512 OFF)
-    else()
-        add_compile_options(-std=c++17 -ffast-math)
-    endif()
+    # Architecture-safe defaults; avoid x86-only flags on ARM/others
+    add_compile_options(-std=c++17 -ffast-math)
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 endif()
 
 # Dynamic detection of SIMD instruction sets
-option(ENABLE_AVX2 "Enable AVX2 instructions" ON)
-option(ENABLE_SSE4 "Enable SSE4.2 instructions" ON)
-option(ENABLE_NEON "Enable ARM NEON instructions" OFF)
-option(ENABLE_AVX512 "Enable AVX-512 instructions (fastsketch.cpp)" ON)
+option(ENABLE_NEON "Enable ARM NEON instructions (auto on arm64)" ON)
+option(ENABLE_AVX512 "Enable AVX-512 instructions (x86_64 only)" ON)
 option(FASTSKETCH_USE_FXHASH "Use FxHasher-style prehash for strings" ON)
 
-if(ENABLE_AVX2)
-    add_definitions(-DUSE_AVX2)
-endif()
-if(ENABLE_SSE4)
-    add_definitions(-DUSE_SSE)
+# Auto-disable AVX512 on non-x86 and hint NEON on arm64
+if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i.86")
+    set(ENABLE_AVX512 OFF)
 endif()
 if(FASTSKETCH_USE_FXHASH)
     add_definitions(-DFASTSKETCH_USE_FXHASH)
