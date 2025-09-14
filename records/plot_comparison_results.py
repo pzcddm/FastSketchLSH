@@ -22,7 +22,7 @@ Time Complexity Analysis:
 - CMinHashSketch: O(k * n)
 - RMinHashSketch: O(k * n)
 
-Author: PhD CS Student - Algorithmic Research
+Author: Zhencan Peng - Algorithmic Research
 """
 
 import pandas as pd
@@ -272,7 +272,7 @@ def main():
     
     # Generate plots
     print(f"\nGenerating performance plots...")
-    plotter.plot_k_trends(fixed_n=10000)
+    plotter.plot_k_trends(fixed_n=1000)
     plotter.plot_n_trends(fixed_k=128)
     
     print(f"\nVisualization complete! Figures saved in records directory.")
