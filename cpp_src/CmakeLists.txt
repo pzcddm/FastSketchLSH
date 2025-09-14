@@ -6,7 +6,16 @@ if(MSVC)
     add_compile_options(/arch:AVX2 /std:c++17 /fp:fast)
     add_definitions(-D_USE_MATH_DEFINES -DNOMINMAX)
 else()
-    add_compile_options(-mavx2 -mbmi2 -mfma -msse4.2 -std=c++17 -ffast-math)
+    # Select flags based on architecture to avoid x86-only flags on Apple Silicon/ARM
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i.86")
+        add_compile_options(-mavx2 -mbmi2 -mfma -msse4.2 -std=c++17 -ffast-math)
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+        add_compile_options(-std=c++17 -ffast-math)
+        # Disable AVX-512 on ARM by default
+        set(ENABLE_AVX512 OFF)
+    else()
+        add_compile_options(-std=c++17 -ffast-math)
+    endif()
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 endif()
 

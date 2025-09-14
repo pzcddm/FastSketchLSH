@@ -1,9 +1,13 @@
 ---
 alwaysApply: true
 ---
-Remember you are using powershell as terminal to run the command, when you exit or close the terminal, enter "exit" instead of "q"
-my development environment on Windows:
+Remember you are using zsh in macOS as terminal to run the command
+<!-- my development environment on Windows:
 
 - Python 3.11.9
 
-- GCC (MSYS2) 15.1.0
+- GCC (MSYS2) 15.1.0 -->
+
+This is my development env on MacOS:
+- Python 3.12.6 (in pyenv)
+- clang in Mac

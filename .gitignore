@@ -4,3 +4,4 @@ cpp_src/*-info/
 FastSketchLSH.cp311*
 .vscode/
 .cursor/
+.venv/
