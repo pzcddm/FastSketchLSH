@@ -163,6 +163,35 @@ class BuildExt(build_ext):
                 ext.extra_compile_args += avx512_flags
                 # Ensure preprocessor paths for AVX-512-enabled code are visible
                 ext.define_macros = list(getattr(ext, 'define_macros', [])) + [("__AVX512F__", "1")]
+
+            # Try to enable OpenMP (conditionally)
+            enable_openmp = False
+            if system_name == "Darwin":
+                # Prefer Homebrew libomp
+                brew_prefixes = ["/opt/homebrew/opt/libomp", "/usr/local/opt/libomp"]
+                for pref in brew_prefixes:
+                    inc = os.path.join(pref, "include")
+                    lib = os.path.join(pref, "lib")
+                    if os.path.exists(os.path.join(inc, "omp.h")):
+                        ext.include_dirs = list(getattr(ext, 'include_dirs', [])) + [inc]
+                        ext.library_dirs = list(getattr(ext, 'library_dirs', [])) + [lib]
+                        ext.extra_compile_args += ["-Xpreprocessor", "-fopenmp"]
+                        ext.extra_link_args += ["-lomp", f"-Wl,-rpath,{lib}"]
+                        enable_openmp = True
+                        print(f"  OpenMP: using libomp at {pref}")
+                        break
+                if not enable_openmp:
+                    print("  OpenMP: libomp not found; building without OpenMP (batch will be single-thread)")
+            else:
+                # Linux/others: try standard flags; may fail if toolchain lacks OpenMP
+                try_flags = ["-fopenmp"]
+                if self.has_compiler_flags(try_flags):
+                    ext.extra_compile_args += try_flags
+                    ext.extra_link_args += try_flags
+                    enable_openmp = True
+                    print("  OpenMP: enabled with -fopenmp")
+                else:
+                    print("  OpenMP: not supported by compiler; building without OpenMP")
         super().build_extensions()
 
 ext_modules = []

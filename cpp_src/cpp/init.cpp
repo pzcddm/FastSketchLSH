@@ -36,6 +36,9 @@
 #include <pybind11/numpy.h>
 #include <pybind11/buffer_info.h>
 #include <cstddef>  // For size_t and ssize_t
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 #ifdef _WIN32
 #include <BaseTsd.h>
 typedef SSIZE_T ssize_t;
@@ -84,6 +87,15 @@ inline std::vector<std::string> bytes_list_to_vector_zerocopy(py::list items) {
 
 PYBIND11_MODULE(FastSketchLSH, m) {
     m.attr("__version__") = "0.2.0";
+    // Expose OpenMP max threads for diagnostics
+    m.def("omp_max_threads", []() {
+#ifdef _OPENMP
+        return omp_get_max_threads();
+#else
+        return 1;
+#endif
+    }, "Return the maximum number of OpenMP threads available (1 if OpenMP disabled)");
+
 
 
     // Note: FastSimilaritySketch (scalar) bindings have been deprecated and removed from Python.
@@ -202,7 +214,145 @@ PYBIND11_MODULE(FastSketchLSH, m) {
               return self.sketch(int_items);
           }
       }, py::arg("items"),
-        "Compute sketch for str/bytes or integer lists using FastSimilaritySketch");
+        "Compute sketch for str/bytes or integer lists using FastSimilaritySketch")
+
+      // Batch sketch: accept a list of batches. Each batch element can be
+      // - NumPy array (np.uint32 or np.int32)
+      // - list/tuple/set of ints
+      // - list/tuple/set of bytes/str
+      .def("sketch_batch", [](FastSimilaritySketch& self, py::list batches, int num_threads) {
+           if (batches.size() == 0) {
+               throw py::value_error("batches cannot be empty");
+           }
+ 
+           auto first = batches[0];
+           // Case 1: list of NumPy arrays
+           if (py::isinstance<py::array>(first)) {
+               // Determine dtype by inspecting the first array
+               if (py::isinstance<py::array_t<uint32_t>>(first)) {
+                   std::vector<std::vector<uint32_t>> vec_batch; vec_batch.reserve(batches.size());
+                   for (auto item : batches) {
+                       if (!py::isinstance<py::array_t<uint32_t>>(item)) {
+                           throw py::value_error("All arrays in batch must be dtype=uint32");
+                       }
+                       vec_batch.emplace_back(numpy_to_vector_zerocopy<uint32_t>(item.cast<py::array_t<uint32_t>>()));
+                   }
+                   py::gil_scoped_release release;
+                   return self.sketch_batch(vec_batch, num_threads);
+               } else if (py::isinstance<py::array_t<int32_t>>(first)) {
+                   std::vector<std::vector<int>> vec_batch; vec_batch.reserve(batches.size());
+                   for (auto item : batches) {
+                       if (!py::isinstance<py::array_t<int32_t>>(item)) {
+                           throw py::value_error("All arrays in batch must be dtype=int32");
+                       }
+                       auto arr = numpy_to_vector_zerocopy<int32_t>(item.cast<py::array_t<int32_t>>());
+                       std::vector<int> vec(arr.begin(), arr.end());
+                       vec_batch.emplace_back(std::move(vec));
+                   }
+                   py::gil_scoped_release release;
+                   return self.sketch_batch(vec_batch, num_threads);
+               } else {
+                   throw py::value_error("Only int32/uint32 NumPy arrays are supported in batch");
+               }
+           }
+ 
+           // Case 2: list/tuple/set of bytes/str or ints
+           // Inspect inner container's first element
+           auto inner_any = py::reinterpret_borrow<py::object>(batches[0]);
+           py::iterable inner_iter;
+           try {
+               inner_iter = inner_any.cast<py::iterable>();
+           } catch (...) {
+               throw py::value_error("Each batch element must be an iterable (array/list/tuple/set)");
+           }
+           if (py::len(inner_iter) == 0) {
+               throw py::value_error("Inner iterable cannot be empty");
+           }
+           auto inner_first = *inner_iter.begin();
+           const bool inner_is_bytes_like = py::isinstance<py::bytes>(inner_first)
+                                         || py::isinstance<py::str>(inner_first)
+                                         || py::hasattr(inner_first, "__bytes__");
+           if (inner_is_bytes_like) {
+               std::vector<std::vector<std::string>> batch_bytes; batch_bytes.reserve(batches.size());
+               for (auto item : batches) {
+                   py::iterable cont = py::cast<py::iterable>(item);
+                   std::vector<std::string> out;
+                   out.reserve(py::len(cont));
+                   for (auto v : cont) {
+                       if (py::isinstance<py::bytes>(v)) {
+                           out.emplace_back(py::cast<std::string>(v));
+                       } else if (py::isinstance<py::str>(v)) {
+                           py::bytes b = py::reinterpret_borrow<py::bytes>(py::str(v).attr("encode")("utf-8"));
+                           out.emplace_back(py::cast<std::string>(b));
+                       } else if (py::hasattr(v, "__bytes__")) {
+                           py::bytes b = py::reinterpret_borrow<py::bytes>(py::reinterpret_borrow<py::object>(v).attr("__bytes__")());
+                           out.emplace_back(py::cast<std::string>(b));
+                       } else {
+                           throw py::value_error("All inner items must be str/bytes when batch is string-like");
+                       }
+                   }
+                   batch_bytes.emplace_back(std::move(out));
+               }
+               py::gil_scoped_release release;
+               return self.sketch_batch(batch_bytes, num_threads);
+           } else {
+               std::vector<std::vector<int>> batch_ints; batch_ints.reserve(batches.size());
+               for (auto item : batches) {
+                   py::iterable cont = py::cast<py::iterable>(item);
+                   std::vector<int> out; out.reserve(py::len(cont));
+                   for (auto v : cont) {
+                       try {
+                           int val = py::cast<int>(v);
+                           if (val < 0) throw py::value_error("FastSimilaritySketch requires non-negative integers");
+                           out.push_back(val);
+                       } catch (const py::cast_error&) {
+                           throw py::value_error("All inner items must be integers when batch is not string-like");
+                       }
+                   }
+                   batch_ints.emplace_back(std::move(out));
+               }
+               py::gil_scoped_release release;
+               return self.sketch_batch(batch_ints, num_threads);
+           }
+       }, py::arg("batches"), py::arg("num_threads") = 0,
+          "Compute sketches for a batch.\n"
+          "batches: list of (np.int32/np.uint32 arrays) or list/tuple/set of ints or bytes/str.\n"
+          "num_threads: 0 uses all threads (if OpenMP enabled). 1 forces single-thread.")
+
+      // Removed sketch_batch_flat(list-based). Use sketch_batch_flat_csr for flat outputs.
+
+      // CSR zero-copy numeric batch: (data: np.uint32, indptr: np.uint64) -> np.ndarray (B, t)
+      .def("sketch_batch_flat_csr", [](FastSimilaritySketch& self,
+                                        py::array_t<uint32_t, py::array::c_style | py::array::forcecast> data,
+                                        py::array_t<uint64_t, py::array::c_style | py::array::forcecast> indptr,
+                                        int num_threads) {
+           py::buffer_info bd = data.request();
+           py::buffer_info bi = indptr.request();
+           if (bi.ndim != 1 || bd.ndim != 1) throw py::value_error("data and indptr must be 1D arrays");
+           if (bi.size < 2) throw py::value_error("indptr must have length >= 2");
+           const size_t B = static_cast<size_t>(bi.size - 1);
+           const size_t t = static_cast<size_t>(self.t);
+           uint32_t* dptr = static_cast<uint32_t*>(bd.ptr);
+           uint64_t* iptr = static_cast<uint64_t*>(bi.ptr);
+           // Allocate flat output and compute under GIL release
+           std::unique_ptr<uint64_t[]> flat(new uint64_t[B * t]);
+           {
+               py::gil_scoped_release release;
+               self.sketch_batch_flat_csr(dptr, iptr, B, flat.get(), num_threads);
+           }
+           // Wrap as NumPy array without copy
+           uint64_t* raw = flat.release();
+           py::capsule owner(raw, [](void* f){ delete[] reinterpret_cast<uint64_t*>(f); });
+           return py::array(
+               py::dtype::of<uint64_t>(),
+               std::vector<ssize_t>{(ssize_t)B, (ssize_t)t},
+               std::vector<ssize_t>{(ssize_t)(t*sizeof(uint64_t)), (ssize_t)sizeof(uint64_t)},
+               raw,
+               owner
+           );
+      }, py::arg("data"), py::arg("indptr"), py::arg("num_threads") = 0,
+         "CSR zero-copy batch: data(np.uint32), indptr(np.uint64 length B+1) -> np.ndarray (B,t)")
+ ;
 
     py::class_<FastSketchLSH>(m, "FastSketchLSH")
       .def(py::init<float, size_t, size_t, uint32_t>(),

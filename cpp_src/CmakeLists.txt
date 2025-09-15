@@ -42,6 +42,12 @@ set(FASTSKETCH_CORE_SRCS
 add_library(FastSketchLSH_core STATIC ${FASTSKETCH_CORE_SRCS})
 target_include_directories(FastSketchLSH_core PUBLIC include)
 
+# Try to enable OpenMP for batch parallelism
+find_package(OpenMP QUIET)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(FastSketchLSH_core PUBLIC OpenMP::OpenMP_CXX)
+endif()
+
 # Add AVX-512 source on demand and set per-file compile options
 if(ENABLE_AVX512)
     target_sources(FastSketchLSH_core PRIVATE cpp/fastsketch.cpp)
@@ -60,6 +66,9 @@ endif()
 if(pybind11_FOUND)
     pybind11_add_module(FastSketchLSH cpp/init.cpp)
     target_link_libraries(FastSketchLSH PRIVATE FastSketchLSH_core pybind11::module)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(FastSketchLSH PRIVATE OpenMP::OpenMP_CXX)
+    endif()
 else()
     message(WARNING "pybind11 not found; skipping Python module build (FastSketchLSH)")
 endif()

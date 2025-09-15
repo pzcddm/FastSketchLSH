@@ -121,7 +121,7 @@ inline void hash_int32x8_to_u64_avx512(const uint32_t* src, uint64_t* dst) {
 // ===================== Main class declaration =====================
 class FastSimilaritySketch {
 public:
-    int t;
+    const int t;
     uint64_t t_mask;                // t-1 (t must be a power of two)
     std::vector<uint64_t> seeds;    // 2*t seeds
     // Persistent buffer to avoid reallocating prehash storage every call
@@ -136,8 +136,12 @@ public:
     std::vector<uint64_t> last_digest;
 
     explicit FastSimilaritySketch(int sketch_size, uint64_t random_seed=42);
+    // Construct with precomputed seeds (avoids RNG in constructor)
+    FastSimilaritySketch(int sketch_size, const std::vector<uint64_t>& precomputed_seeds);
     // Input changed to vector<uint32_t> for SIMD-friendly zero-extension
     std::vector<uint64_t> sketch(const std::vector<uint32_t>& A);
+    // Pointer-based overload to enable zero-copy batch processing
+    std::vector<uint64_t> sketch(const uint32_t* data, size_t n);
     // Compatibility overload for legacy int vectors
     std::vector<uint64_t> sketch(const std::vector<int>& A);
     // Instrumented overload: returns per-phase timings (ms) if pointers are non-null
@@ -152,6 +156,24 @@ public:
                                  double* prehash_ms,
                                  double* phase1_ms,
                                  double* phase2_ms);
+
+    // Batch APIs: compute sketches for a batch of inputs.
+    // Each batch element corresponds to one set. num_threads=0 uses all available threads when OpenMP is enabled.
+    std::vector<std::vector<uint64_t>> sketch_batch(const std::vector<std::vector<uint32_t>>& batch,
+                                                    int num_threads = 0);
+    std::vector<std::vector<uint64_t>> sketch_batch(const std::vector<std::vector<int>>& batch,
+                                                    int num_threads = 0);
+    std::vector<std::vector<uint64_t>> sketch_batch(const std::vector<std::vector<std::string>>& batch,
+                                                    int num_threads = 0);
+
+    // Batch flat-output APIs: removed list-based flat variants (use CSR version)
+
+    // Zero-copy CSR-style batch: data is concatenated items, indptr has length B+1
+    void sketch_batch_flat_csr(const uint32_t* data,
+                               const uint64_t* indptr,
+                               size_t B,
+                               uint64_t* out_ptr,
+                               int num_threads = 0);
 
     // Access last computed digest (for LSH Rensa compatibility)
     const std::vector<uint64_t>& digest() const noexcept { return last_digest; }

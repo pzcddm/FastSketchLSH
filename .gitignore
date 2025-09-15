@@ -5,3 +5,6 @@ FastSketchLSH.cp311*
 .vscode/
 .cursor/
 .venv/
+.eggs/
+.cursorignore
+*.cpython-*
