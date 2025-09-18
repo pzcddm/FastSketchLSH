@@ -175,6 +175,21 @@ public:
                                uint64_t* out_ptr,
                                int num_threads = 0);
 
+    // Pointer-array batch: avoids concatenation copy by taking pointers to each set
+    void sketch_batch_flat_ptrs(const uint32_t* const* data_ptrs,
+                                const size_t* lengths,
+                                size_t B,
+                                uint64_t* out_ptr,
+                                int num_threads = 0);
+
+    // Batch over byte-strings using raw pointers and lengths (flattened with indptr)
+    void sketch_batch_flat_bytes(const uint8_t* const* ptrs,
+                                 const size_t* lengths,
+                                 const uint64_t* indptr,
+                                 size_t B,
+                                 uint64_t* out_ptr,
+                                 int num_threads = 0);
+
     // Access last computed digest (for LSH Rensa compatibility)
     const std::vector<uint64_t>& digest() const noexcept { return last_digest; }
 };

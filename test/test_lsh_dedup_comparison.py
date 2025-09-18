@@ -231,11 +231,9 @@ def main(ratio: float = 1.0) -> None:
     # Build MinHashes
     token_sets_str = [[str(tok).encode('utf-8') for tok in tokens] for tokens in token_sets]
     fsr_minhash_start = time.perf_counter()
-    minhashes = []
     m = FastSimilaritySketch(sketch_size=num_perm, seed=42)
-    for tokens in token_sets_str:
-        sketch = m.sketch(tokens)
-        minhashes.append(sketch)
+    # Batch compute sketches using all threads
+    minhashes = m.sketch_batch(token_sets_str, num_threads=0)
     fsr_minhash_time = time.perf_counter() - fsr_minhash_start
     # # Insert into FastSketchLSHRensa
     # fsr_insert_start = time.perf_counter()
