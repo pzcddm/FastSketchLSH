@@ -46,6 +46,7 @@ typedef SSIZE_T ssize_t;
 #include "../include/fastsketch.h"
 #include "../include/fastsketch_lsh.h"
 #include "../include/fastsketch_rensa_lsh.h"
+#include "../include/LSH.h"
 
 namespace py = pybind11;
 
@@ -706,4 +707,226 @@ PYBIND11_MODULE(FastSketchLSH, m) {
       .def_property_readonly("num_bands", &FastSketchLSHRensa::num_bands)
       .def_property_readonly("band_size",&FastSketchLSHRensa::band_size)
       .def_property_readonly("threshold",&FastSketchLSHRensa::threshold);
+
+    // ===================== New band-parallel LSH bindings =====================
+    py::enum_<LSH::BandHashKind>(m, "BandHashKind")
+        .value("splitmix64", LSH::BandHashKind::splitmix64)
+        .value("wyhash_final", LSH::BandHashKind::wyhash_final)
+        .export_values();
+
+    py::class_<LSH>(m, "LSH")
+      .def(py::init<std::size_t, std::size_t, LSH::BandHashKind, std::uint64_t>(),
+           py::arg("num_perm"),
+           py::arg("num_bands"),
+           py::arg("hash_kind") = LSH::BandHashKind::splitmix64,
+           py::arg("seed") = 0x9e3779b97f4a7c15ULL,
+           "Initialize band-parallel LSH")
+      .def("reserve", &LSH::reserve, py::arg("expected_num_items"),
+           "Reserve internal capacity for expected number of items")
+      .def("clear", &LSH::clear, "Clear all tables and reset state")
+
+      // Build from 2D NumPy ndarray (B, t), dtype=uint64, contiguous or strided
+      .def("build_from_batch", [](LSH& self,
+                                   py::array_t<std::uint64_t, py::array::c_style | py::array::forcecast> arr) {
+           py::buffer_info bi = arr.request();
+           if (bi.ndim != 2) {
+               throw py::value_error("Input must be a 2D array of shape (B, t)");
+           }
+           const std::size_t B = static_cast<std::size_t>(bi.shape[0]);
+           const std::size_t t = static_cast<std::size_t>(bi.shape[1]);
+           if (t != self.num_perm()) {
+               throw py::value_error("t must equal num_perm");
+           }
+           const std::uint64_t* base = static_cast<const std::uint64_t*>(bi.ptr);
+           {
+               py::gil_scoped_release release;
+               self.build_from_batch(base, B, t);
+           }
+       }, py::arg("ndarray"),
+          "Build from 2D NumPy ndarray (uint64) with zero/low-copy")
+
+      // Build from list of 1D NumPy arrays (each length t, dtype=uint64)
+      .def("build_from_batch", [](LSH& self, py::list rows) {
+           const std::size_t B = static_cast<std::size_t>(rows.size());
+           if (B == 0) return;
+           const std::size_t t = self.num_perm();
+           std::unique_ptr<const std::uint64_t*[]> ptrs(new const std::uint64_t*[B]);
+           for (std::size_t i = 0; i < B; ++i) {
+               auto arr = py::cast<py::array_t<std::uint64_t, py::array::c_style | py::array::forcecast>>(rows[i]);
+               py::buffer_info bi = arr.request();
+               if (bi.ndim != 1) throw py::value_error("Each array must be 1D");
+               if (static_cast<std::size_t>(bi.size) != t) throw py::value_error("Row length must equal num_perm");
+               ptrs[i] = static_cast<const std::uint64_t*>(bi.ptr);
+           }
+           {
+               py::gil_scoped_release release;
+               self.build_from_batch(ptrs.get(), B, t);
+           }
+       }, py::arg("rows"),
+          "Build from list of NumPy arrays (uint64, length t) without copies")
+
+      // Build from list of Python lists (will copy into a temporary (B,t) buffer)
+      .def("build_from_batch", [](LSH& self, py::object py_rows) {
+           PyObject* seq = PySequence_Fast(py_rows.ptr(), "rows must be a sequence");
+           if (!seq) throw py::error_already_set();
+           const Py_ssize_t Bp = PySequence_Fast_GET_SIZE(seq);
+           const std::size_t B = static_cast<std::size_t>(Bp);
+           const std::size_t t = self.num_perm();
+           std::vector<std::uint64_t> buf;
+           buf.resize(B * t);
+           for (Py_ssize_t i = 0; i < Bp; ++i) {
+               PyObject* row_obj = PySequence_Fast_GET_ITEM(seq, i);
+               PyObject* row_seq = PySequence_Fast(row_obj, "Each row must be a sequence");
+               if (!row_seq) { Py_DECREF(seq); throw py::error_already_set(); }
+               const Py_ssize_t n = PySequence_Fast_GET_SIZE(row_seq);
+               if (static_cast<std::size_t>(n) != t) { Py_DECREF(row_seq); Py_DECREF(seq); throw py::value_error("Row length must equal num_perm"); }
+               PyObject** items = PySequence_Fast_ITEMS(row_seq);
+               std::uint64_t* out = buf.data() + static_cast<std::size_t>(i) * t;
+               for (Py_ssize_t j = 0; j < n; ++j) {
+                   unsigned long long v = PyLong_AsUnsignedLongLong(items[j]);
+                   if (v == (unsigned long long)-1 && PyErr_Occurred()) { Py_DECREF(row_seq); Py_DECREF(seq); throw py::value_error("All items must be integers"); }
+                   out[static_cast<std::size_t>(j)] = static_cast<std::uint64_t>(v);
+               }
+               Py_DECREF(row_seq);
+           }
+           Py_DECREF(seq);
+           const std::uint64_t* base = buf.data();
+           {
+               py::gil_scoped_release release;
+               self.build_from_batch(base, B, t);
+           }
+       }, py::arg("rows"),
+          "Build from list of Python lists (copied once into a temporary buffer)")
+
+      // Query candidates: 1D NumPy array (t,) uint64 → Python list[int]
+      .def("query_candidates", [](const LSH& self,
+                                   py::array_t<std::uint64_t, py::array::c_style | py::array::forcecast> digest) {
+           py::buffer_info bi = digest.request();
+           if (bi.ndim != 1) throw py::value_error("digest must be 1D uint64 array");
+           const std::size_t t = static_cast<std::size_t>(bi.size);
+           const std::uint64_t* ptr = static_cast<const std::uint64_t*>(bi.ptr);
+           std::vector<std::size_t> result;
+           {
+               py::gil_scoped_release release;
+               result = self.query_candidates(ptr, t);
+           }
+           return result;
+       }, py::arg("digest"), "Query candidates for a single digest (NumPy uint64 array)")
+
+      // Query candidates: Python list of ints → Python list[int]
+      .def("query_candidates", [](const LSH& self, py::iterable py_digest) {
+           std::vector<std::uint64_t> buf;
+           buf.reserve(self.num_perm());
+           for (auto item : py_digest) {
+               unsigned long long v = PyLong_AsUnsignedLongLong(item.ptr());
+               if (v == (unsigned long long)-1 && PyErr_Occurred()) throw py::value_error("All items must be integers");
+               buf.push_back(static_cast<std::uint64_t>(v));
+           }
+           std::vector<std::size_t> result;
+           {
+               py::gil_scoped_release release;
+               result = self.query_candidates(buf.data(), buf.size());
+           }
+           return result;
+       }, py::arg("digest"), "Query candidates for a single digest (Python list of ints)")
+
+      // Fast path: return candidates as NumPy array (uint64) to avoid Python int boxing
+      .def("query_candidates_np", [](const LSH& self,
+                                      py::array_t<std::uint64_t, py::array::c_style | py::array::forcecast> digest) {
+           py::buffer_info bi = digest.request();
+           if (bi.ndim != 1) throw py::value_error("digest must be 1D uint64 array");
+           const std::size_t t = static_cast<std::size_t>(bi.size);
+           const std::uint64_t* ptr = static_cast<const std::uint64_t*>(bi.ptr);
+           std::vector<std::size_t> candidates;
+           {
+               py::gil_scoped_release release;
+               candidates = self.query_candidates(ptr, t);
+           }
+           const ssize_t n = static_cast<ssize_t>(candidates.size());
+           std::uint64_t* raw = new std::uint64_t[static_cast<std::size_t>(n)];
+           for (ssize_t i = 0; i < n; ++i) raw[static_cast<std::size_t>(i)] = static_cast<std::uint64_t>(candidates[static_cast<std::size_t>(i)]);
+           py::capsule owner(raw, [](void* f){ delete[] reinterpret_cast<std::uint64_t*>(f); });
+           return py::array(
+               py::dtype::of<std::uint64_t>(),
+               std::vector<ssize_t>{n},
+               std::vector<ssize_t>{static_cast<ssize_t>(sizeof(std::uint64_t))},
+               raw,
+               owner
+           );
+       }, py::arg("digest"), "Return candidates as NumPy uint64 array (zero Python boxing)")
+
+      // Overload: Python list[int] → NumPy array (uint64)
+      .def("query_candidates_np", [](const LSH& self, py::iterable py_digest) {
+           std::vector<std::uint64_t> buf; buf.reserve(self.num_perm());
+           for (auto item : py_digest) {
+               unsigned long long v = PyLong_AsUnsignedLongLong(item.ptr());
+               if (v == (unsigned long long)-1 && PyErr_Occurred()) throw py::value_error("All items must be integers");
+               buf.push_back(static_cast<std::uint64_t>(v));
+           }
+           std::vector<std::size_t> candidates;
+           {
+               py::gil_scoped_release release;
+               candidates = self.query_candidates(buf.data(), buf.size());
+           }
+           const ssize_t n = static_cast<ssize_t>(candidates.size());
+           std::uint64_t* raw = new std::uint64_t[static_cast<std::size_t>(n)];
+           for (ssize_t i = 0; i < n; ++i) raw[static_cast<std::size_t>(i)] = static_cast<std::uint64_t>(candidates[static_cast<std::size_t>(i)]);
+           py::capsule owner(raw, [](void* f){ delete[] reinterpret_cast<std::uint64_t*>(f); });
+           return py::array(
+               py::dtype::of<std::uint64_t>(),
+               std::vector<ssize_t>{n},
+               std::vector<ssize_t>{static_cast<ssize_t>(sizeof(std::uint64_t))},
+               raw,
+               owner
+           );
+       }, py::arg("digest"), "Return candidates as NumPy uint64 array (zero Python boxing)")
+
+      // Batch query: return CSR-style (flat candidates uint64, indptr uint64) for ndarray (B,t)
+      .def("query_candidates_batch_np", [](const LSH& self,
+                                            py::array_t<std::uint64_t, py::array::c_style | py::array::forcecast> arr) {
+           py::buffer_info bi = arr.request();
+           if (bi.ndim != 2) throw py::value_error("Input must be 2D (B,t) uint64 array");
+           const std::size_t B = static_cast<std::size_t>(bi.shape[0]);
+           const std::size_t t = static_cast<std::size_t>(bi.shape[1]);
+           const std::uint64_t* base = static_cast<const std::uint64_t*>(bi.ptr);
+           std::vector<std::size_t> flat;
+           std::vector<std::uint64_t> indptr;
+           {
+               py::gil_scoped_release release;
+               self.query_candidates_batch(base, B, t, flat, indptr);
+           }
+           // Wrap flat as uint64 array
+           const ssize_t nflat = static_cast<ssize_t>(flat.size());
+           std::uint64_t* flat_raw = new std::uint64_t[static_cast<std::size_t>(nflat)];
+           for (ssize_t i = 0; i < nflat; ++i) flat_raw[static_cast<std::size_t>(i)] = static_cast<std::uint64_t>(flat[static_cast<std::size_t>(i)]);
+           py::capsule owner_flat(flat_raw, [](void* f){ delete[] reinterpret_cast<std::uint64_t*>(f); });
+           py::array flat_arr(
+               py::dtype::of<std::uint64_t>(),
+               std::vector<ssize_t>{nflat},
+               std::vector<ssize_t>{static_cast<ssize_t>(sizeof(std::uint64_t))},
+               flat_raw,
+               owner_flat
+           );
+           // Wrap indptr as uint64 array
+           const ssize_t nip = static_cast<ssize_t>(indptr.size());
+           std::uint64_t* ip_raw = new std::uint64_t[static_cast<std::size_t>(nip)];
+           for (ssize_t i = 0; i < nip; ++i) ip_raw[static_cast<std::size_t>(i)] = indptr[static_cast<std::size_t>(i)];
+           py::capsule owner_ip(ip_raw, [](void* f){ delete[] reinterpret_cast<std::uint64_t*>(f); });
+           py::array indptr_arr(
+               py::dtype::of<std::uint64_t>(),
+               std::vector<ssize_t>{nip},
+               std::vector<ssize_t>{static_cast<ssize_t>(sizeof(std::uint64_t))},
+               ip_raw,
+               owner_ip
+           );
+           return py::make_tuple(flat_arr, indptr_arr);
+       }, py::arg("ndarray"),
+          "Batch query returning (flat uint64 array, indptr uint64 array)")
+
+      // Read-only properties
+      .def_property_readonly("num_perm",  &LSH::num_perm)
+      .def_property_readonly("num_bands", &LSH::num_bands)
+      .def_property_readonly("band_size", &LSH::band_size)
+      // threshold removed
+    ;
 }

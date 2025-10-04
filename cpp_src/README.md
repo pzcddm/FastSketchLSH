@@ -3,6 +3,10 @@ You can install FastHashSketch using `pip`. It's available in all platforms:
 ```bash
 pip install .
 ```
+ 
+## TODO
+
+- [ ] Return NumPy ndarray when input is NumPy ndarray for single-set `sketch` overloads (np.uint32/np.int32 inputs).
 
 # Usage Example
 ```python
