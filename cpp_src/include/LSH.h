@@ -31,8 +31,8 @@ public:
         wyhash_final = 1 // reserved for future use
     };
 
-    // Construct LSH with t=num_perm, b=num_bands, and similarity threshold.
-    // Preconditions: num_perm>0, num_bands>0, num_perm % num_bands == 0, 0<threshold<1
+    // Construct LSH with t=num_perm, b=num_bands
+    // Preconditions: num_perm>0, num_bands>0, num_perm % num_bands == 0
     explicit LSH(std::size_t num_perm,
                  std::size_t num_bands,
                  BandHashKind hash_kind = BandHashKind::splitmix64,
@@ -80,8 +80,6 @@ public:
 private:
     template <class K, class V>
         using FlatMap = ankerl::unordered_dense::map<K, V>;
-    template <class T>
-        using FlatSet = ankerl::unordered_dense::set<T>;
 
     using Bucket = std::vector<std::size_t>;
     using BandTable = FlatMap<std::uint64_t, Bucket>;

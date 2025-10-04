@@ -205,8 +205,6 @@ if pybind11_available:
             "cpp/fasthash_deprecated.cpp",
             "cpp/fastsketch.cpp",
             'cpp/murmurhash3.cpp',
-            'cpp/fastsketch_lsh.cpp',
-            'cpp/fastsketch_rensa_lsh.cpp',
             'cpp/LSH.cpp',
             'cpp/init.cpp'
         ],
