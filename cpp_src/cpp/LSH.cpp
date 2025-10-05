@@ -12,6 +12,9 @@
 // - Query:  O(num_perm + output_size)
 // - Memory: O(unique band hashes + total stored IDs)
 //
+// This file implements the LSH class for high-throughput band-parallel locality-sensitive hashing.
+// Each function is documented with a brief description of its purpose and usage.
+
 #include <algorithm>
 #include <cmath>
 #include <atomic>
@@ -20,6 +23,7 @@
 #include "../include/LSH.h"
 
 namespace {
+    // Generate a unique salt for each band using the global seed and band index.
     static inline std::uint64_t make_salt(std::uint64_t seed, std::size_t band_index) {
         // Derive a stable salt per band from the global seed
         std::uint64_t x = seed ^ (0x9e3779b97f4a7c15ULL * static_cast<std::uint64_t>(band_index + 1));
@@ -30,6 +34,9 @@ namespace {
     }
 }
 
+// Constructor for LSH.
+// Initializes the LSH object with the given number of permutations, bands, hash kind, and seed.
+// Throws std::invalid_argument if parameters are invalid.
 LSH::LSH(std::size_t num_perm,
          std::size_t num_bands,
          BandHashKind hash_kind,
@@ -54,6 +61,8 @@ LSH::LSH(std::size_t num_perm,
     tables_.resize(num_bands_);
 }
 
+// Reserve space in each band's hash table for the expected number of items.
+// This helps minimize rehashing during insertion.
 void LSH::reserve(std::size_t expected_num_items) {
     if (expected_num_items == 0) return;
     // Target load factor ~0.6; conservatively reserve to minimize rehash
@@ -64,6 +73,7 @@ void LSH::reserve(std::size_t expected_num_items) {
     }
 }
 
+// Clear all hash tables and reset the next_id_ counter.
 void LSH::clear() {
     for (auto& table : tables_) {
         table.clear();
@@ -71,6 +81,9 @@ void LSH::clear() {
     next_id_ = 0;
 }
 
+// Build the LSH tables from a batch of contiguous rows (row-major).
+// Each row is a sketch of length t (must equal num_perm_).
+// The batch is inserted in parallel across bands.
 void LSH::build_from_batch(const std::uint64_t* base,
                            std::size_t batch,
                            std::size_t t) {
@@ -102,6 +115,9 @@ void LSH::build_from_batch(const std::uint64_t* base,
     }
 }
 
+// Build the LSH tables from a batch of pointer-to-row arrays.
+// Each row is a pointer to a sketch of length t (must equal num_perm_).
+// The batch is inserted in parallel across bands.
 void LSH::build_from_batch(const std::uint64_t* const* rows,
                            std::size_t batch,
                            std::size_t t) {
@@ -131,15 +147,15 @@ void LSH::build_from_batch(const std::uint64_t* const* rows,
     }
 }
 
-std::vector<std::size_t> LSH::query_candidates(const std::uint64_t* digest,
-                                               std::size_t t) const {
-    if (t != num_perm_) {
-        throw std::invalid_argument("t must equal num_perm");
-    }
+// Query the LSH tables for candidates similar to the given digest (sketch).
+// Returns a deduplicated vector of candidate IDs.
+// Time: O(num_bands_ * band_size_ + output_size)
+const std::vector<std::size_t>& LSH::query_candidates(const std::uint64_t* digest,
+                                                      std::size_t t) const {
+
     // Collect then sort+unique to deduplicate candidates across bands.
-    // Typical bucket sizes are small; this avoids heavy per-row hash set allocations.
-    std::vector<std::size_t> tmp;
-    tmp.reserve(num_bands_ * std::max<std::size_t>(8, band_size_));
+    // Reuse internal buffer to avoid per-call allocation.
+    last_candidates_.clear();
     for (std::size_t b = 0; b < num_bands_; ++b) {
         const std::size_t offset = b * band_size_;
         const std::uint64_t salt = band_salts_[b];
@@ -147,13 +163,16 @@ std::vector<std::size_t> LSH::query_candidates(const std::uint64_t* digest,
         const auto it = tables_[b].find(h);
         if (it == tables_[b].end()) continue;
         const Bucket& bucket = it->second;
-        for (std::size_t id : bucket) tmp.push_back(id);
+        last_candidates_.insert(last_candidates_.end(), bucket.begin(), bucket.end());
     }
-    std::sort(tmp.begin(), tmp.end());
-    tmp.erase(std::unique(tmp.begin(), tmp.end()), tmp.end());
-    return tmp;
+    std::sort(last_candidates_.begin(), last_candidates_.end());
+    last_candidates_.erase(std::unique(last_candidates_.begin(), last_candidates_.end()), last_candidates_.end());
+    return last_candidates_;
 }
 
+// Query the LSH tables for a batch of contiguous digests (row-major).
+// Fills flat_out with all candidate IDs and indptr_out with row boundaries.
+// Output is in CSR-like format: flat_out[indptr_out[i]:indptr_out[i+1]] are candidates for row i.
 void LSH::query_candidates_batch(const std::uint64_t* base,
                                  std::size_t batch,
                                  std::size_t t,
@@ -179,7 +198,7 @@ void LSH::query_candidates_batch(const std::uint64_t* base,
             const auto it = tables_[b].find(h);
             if (it == tables_[b].end()) continue;
             const Bucket& bucket = it->second;
-            for (std::size_t id : bucket) tmp.push_back(id);
+            tmp.insert(tmp.end(), bucket.begin(), bucket.end());
         }
         std::sort(tmp.begin(), tmp.end());
         tmp.erase(std::unique(tmp.begin(), tmp.end()), tmp.end());
@@ -206,7 +225,7 @@ void LSH::query_candidates_batch(const std::uint64_t* base,
             const auto it = tables_[b].find(h);
             if (it == tables_[b].end()) continue;
             const Bucket& bucket = it->second;
-            for (std::size_t id : bucket) tmp.push_back(id);
+            tmp.insert(tmp.end(), bucket.begin(), bucket.end());
         }
         std::sort(tmp.begin(), tmp.end());
         tmp.erase(std::unique(tmp.begin(), tmp.end()), tmp.end());
@@ -215,6 +234,9 @@ void LSH::query_candidates_batch(const std::uint64_t* base,
     }
 }
 
+// Query the LSH tables for a batch of pointer-to-row digests.
+// Fills flat_out with all candidate IDs and indptr_out with row boundaries.
+// Output is in CSR-like format: flat_out[indptr_out[i]:indptr_out[i+1]] are candidates for row i.
 void LSH::query_candidates_batch(const std::uint64_t* const* rows,
                                  std::size_t batch,
                                  std::size_t t,
@@ -239,7 +261,7 @@ void LSH::query_candidates_batch(const std::uint64_t* const* rows,
             const auto it = tables_[b].find(h);
             if (it == tables_[b].end()) continue;
             const Bucket& bucket = it->second;
-            for (std::size_t id : bucket) tmp.push_back(id);
+            tmp.insert(tmp.end(), bucket.begin(), bucket.end());
         }
         std::sort(tmp.begin(), tmp.end());
         tmp.erase(std::unique(tmp.begin(), tmp.end()), tmp.end());
@@ -274,6 +296,3 @@ void LSH::query_candidates_batch(const std::uint64_t* const* rows,
         std::copy(tmp.begin(), tmp.end(), flat_out.begin() + static_cast<std::ptrdiff_t>(start));
     }
 }
-
-
-

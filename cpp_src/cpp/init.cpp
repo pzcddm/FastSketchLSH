@@ -588,15 +588,10 @@ PYBIND11_MODULE(FastSketchLSH, m) {
       .def("query_candidates", [](const LSH& self,
                                    py::array_t<std::uint64_t, py::array::c_style | py::array::forcecast> digest) {
            py::buffer_info bi = digest.request();
-           if (bi.ndim != 1) throw py::value_error("digest must be 1D uint64 array");
            const std::size_t t = static_cast<std::size_t>(bi.size);
            const std::uint64_t* ptr = static_cast<const std::uint64_t*>(bi.ptr);
-           std::vector<std::size_t> result;
-           {
-               py::gil_scoped_release release;
-               result = self.query_candidates(ptr, t);
-           }
-           return result;
+           py::gil_scoped_release release;
+           return self.query_candidates(ptr, t);
        }, py::arg("digest"), "Query candidates for a single digest (NumPy uint64 array)")
 
       // Query candidates: Python list of ints → Python list[int]
@@ -608,67 +603,12 @@ PYBIND11_MODULE(FastSketchLSH, m) {
                if (v == (unsigned long long)-1 && PyErr_Occurred()) throw py::value_error("All items must be integers");
                buf.push_back(static_cast<std::uint64_t>(v));
            }
-           std::vector<std::size_t> result;
-           {
-               py::gil_scoped_release release;
-               result = self.query_candidates(buf.data(), buf.size());
-           }
-           return result;
+           py::gil_scoped_release release;
+           return self.query_candidates(buf.data(), buf.size());
        }, py::arg("digest"), "Query candidates for a single digest (Python list of ints)")
 
-      // Fast path: return candidates as NumPy array (uint64) to avoid Python int boxing
-      .def("query_candidates_np", [](const LSH& self,
-                                      py::array_t<std::uint64_t, py::array::c_style | py::array::forcecast> digest) {
-           py::buffer_info bi = digest.request();
-           if (bi.ndim != 1) throw py::value_error("digest must be 1D uint64 array");
-           const std::size_t t = static_cast<std::size_t>(bi.size);
-           const std::uint64_t* ptr = static_cast<const std::uint64_t*>(bi.ptr);
-           std::vector<std::size_t> candidates;
-           {
-               py::gil_scoped_release release;
-               candidates = self.query_candidates(ptr, t);
-           }
-           const ssize_t n = static_cast<ssize_t>(candidates.size());
-           std::uint64_t* raw = new std::uint64_t[static_cast<std::size_t>(n)];
-           for (ssize_t i = 0; i < n; ++i) raw[static_cast<std::size_t>(i)] = static_cast<std::uint64_t>(candidates[static_cast<std::size_t>(i)]);
-           py::capsule owner(raw, [](void* f){ delete[] reinterpret_cast<std::uint64_t*>(f); });
-           return py::array(
-               py::dtype::of<std::uint64_t>(),
-               std::vector<ssize_t>{n},
-               std::vector<ssize_t>{static_cast<ssize_t>(sizeof(std::uint64_t))},
-               raw,
-               owner
-           );
-       }, py::arg("digest"), "Return candidates as NumPy uint64 array (zero Python boxing)")
-
-      // Overload: Python list[int] → NumPy array (uint64)
-      .def("query_candidates_np", [](const LSH& self, py::iterable py_digest) {
-           std::vector<std::uint64_t> buf; buf.reserve(self.num_perm());
-           for (auto item : py_digest) {
-               unsigned long long v = PyLong_AsUnsignedLongLong(item.ptr());
-               if (v == (unsigned long long)-1 && PyErr_Occurred()) throw py::value_error("All items must be integers");
-               buf.push_back(static_cast<std::uint64_t>(v));
-           }
-           std::vector<std::size_t> candidates;
-           {
-               py::gil_scoped_release release;
-               candidates = self.query_candidates(buf.data(), buf.size());
-           }
-           const ssize_t n = static_cast<ssize_t>(candidates.size());
-           std::uint64_t* raw = new std::uint64_t[static_cast<std::size_t>(n)];
-           for (ssize_t i = 0; i < n; ++i) raw[static_cast<std::size_t>(i)] = static_cast<std::uint64_t>(candidates[static_cast<std::size_t>(i)]);
-           py::capsule owner(raw, [](void* f){ delete[] reinterpret_cast<std::uint64_t*>(f); });
-           return py::array(
-               py::dtype::of<std::uint64_t>(),
-               std::vector<ssize_t>{n},
-               std::vector<ssize_t>{static_cast<ssize_t>(sizeof(std::uint64_t))},
-               raw,
-               owner
-           );
-       }, py::arg("digest"), "Return candidates as NumPy uint64 array (zero Python boxing)")
-
       // Batch query: return CSR-style (flat candidates uint64, indptr uint64) for ndarray (B,t)
-      .def("query_candidates_batch_np", [](const LSH& self,
+      .def("batch_query_csr", [](const LSH& self,
                                             py::array_t<std::uint64_t, py::array::c_style | py::array::forcecast> arr) {
            py::buffer_info bi = arr.request();
            if (bi.ndim != 2) throw py::value_error("Input must be 2D (B,t) uint64 array");
@@ -708,6 +648,39 @@ PYBIND11_MODULE(FastSketchLSH, m) {
            return py::make_tuple(flat_arr, indptr_arr);
        }, py::arg("ndarray"),
           "Batch query returning (flat uint64 array, indptr uint64 array)")
+
+      // Batch query: return Python list-of-lists of candidates for ndarray (B,t)
+      .def("batch_query", [](const LSH& self,
+                                              py::array_t<std::uint64_t, py::array::c_style | py::array::forcecast> arr) {
+           py::buffer_info bi = arr.request();
+           if (bi.ndim != 2) throw py::value_error("Input must be 2D (B,t) uint64 array");
+           const std::size_t B = static_cast<std::size_t>(bi.shape[0]);
+           const std::size_t t = static_cast<std::size_t>(bi.shape[1]);
+           const std::uint64_t* base = static_cast<const std::uint64_t*>(bi.ptr);
+           std::vector<std::size_t> flat;
+           std::vector<std::uint64_t> indptr;
+           {
+               py::gil_scoped_release release;
+               self.query_candidates_batch(base, B, t, flat, indptr);
+           }
+           py::list outer(static_cast<py::ssize_t>(B));
+           for (std::size_t i = 0; i < B; ++i) {
+               const std::size_t start = static_cast<std::size_t>(indptr[i]);
+               const std::size_t end = static_cast<std::size_t>(indptr[i+1]);
+               const std::size_t len = end - start;
+               py::list inner(static_cast<py::ssize_t>(len));
+               for (std::size_t j = 0; j < len; ++j) {
+                   const std::size_t id = flat[start + j];
+                   PyObject* pyint = PyLong_FromUnsignedLongLong(static_cast<unsigned long long>(id));
+                   // Steals reference
+                   PyList_SET_ITEM(inner.ptr(), static_cast<Py_ssize_t>(j), pyint);
+               }
+               // Steal reference for inner into outer
+               PyList_SET_ITEM(outer.ptr(), static_cast<Py_ssize_t>(i), inner.release().ptr());
+           }
+           return outer;
+       }, py::arg("ndarray"),
+          "Batch query returning Python list-of-lists (minimized allocations)")
 
       // Read-only properties
       .def_property_readonly("num_perm",  &LSH::num_perm)

@@ -180,13 +180,29 @@ def main() -> None:
 
     # Query flags (batch): duplicate if bucket size per row > 1
     fs_query_start = time.perf_counter()
-    flat, indptr = band_lsh.query_candidates_batch_np(minhashes)
-    # fs_band_flags = [1 if int(indptr[i+1] - indptr[i]) > 1 else 0 for i in range(minhashes.shape[0])]
+    flat, indptr = band_lsh.batch_query_csr(minhashes)
+    B = int(minhashes.shape[0])
+    fs_band_flags = [1 if int(indptr[i + 1] - indptr[i]) > 1 else 0 for i in range(B)]
     fs_query_time = time.perf_counter() - fs_query_start
+    # Derive flags from batch CSR result
+    print(sum(fs_band_flags))
 
+    # Query flags (single, NumPy-returning API): loop calling single-item API, duplicate if >1
+    fs_single_query_start = time.perf_counter()
+    Minhashlsh_flags = [1 if len(band_lsh.query_candidates(m)) > 1 else 0 for m in minhashes]
+    fs_single_query_time = time.perf_counter() - fs_single_query_start
+
+    # Query candidates (batch, list-of-lists) and time
+    fs_list_batch_start = time.perf_counter()
+    lol = band_lsh.batch_query(minhashes)
+    # Flags derived from list-of-lists
+    fs_list_flags = [1 if len(row) > 1 else 0 for row in lol]
+
+    fs_list_batch_time = time.perf_counter() - fs_list_batch_start
+    print(sum(fs_list_flags))
     if not use_precomputed:
         print(f"  Rensa: build_minhash={rs_minhash_time:.3f}, insert={rs_insert_time:.3f}, query={rs_query_time:.3f}")
-    print(f"  FastSketch LSH: build_minhash={fs_minhash_time:.3f}, build={fs_build_time:.3f}, query_batch={fs_query_time:.3f}")
+    print(f"  FastSketch LSH: build_minhash={fs_minhash_time:.3f}, build={fs_build_time:.3f}, query_batch={fs_query_time:.3f}, query_single_np={fs_single_query_time:.3f}, query_batch_list={fs_list_batch_time:.3f}")
     # print(f"  fastsketch: insert={fs_insert_time:.3f}, query={fs_query_time:.3f}")
     # print(f"  total: {total_time:.3f}")
     # if rate > max_rate:

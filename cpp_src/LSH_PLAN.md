@@ -10,9 +10,10 @@
 ### Public API (C++ `LSH`)
 
 - **Constructor**
-  - `LSH(size_t num_perm, size_t num_bands, double threshold,
-          BandHashKind hash_kind = BandHashKind::splitmix64)`
-  - Preconditions: `num_perm > 0`, `num_bands > 0`, `num_perm % num_bands == 0`, `0 < threshold < 1`.
+  - `LSH(size_t num_perm, size_t num_bands,
+          BandHashKind hash_kind = BandHashKind::splitmix64,
+          uint64_t seed = 0x9e3779b97f4a7c15ULL)`
+  - Preconditions: `num_perm > 0`, `num_bands > 0`, `num_perm % num_bands == 0`.
 
 - **Batch build (preferred)**
   - `build_from_batch(const uint64_t* base, size_t batch, size_t t)`
@@ -33,7 +34,27 @@
 
 - `cpp_src/include/LSH.h` — public interface and lightweight inline helpers
 - `cpp_src/cpp/LSH.cpp` — implementation (hashing, build/query, threading)
-- Bindings: extend `cpp_src/cpp/init.cpp` to expose batch APIs (2D ndarray, list of ndarrays, list of lists); release GIL.
+- Bindings: `cpp_src/cpp/init.cpp` exposes batch APIs for Python (2D ndarray fast paths, list of ndarrays, list of lists); all heavy paths release the GIL.
+
+### Python bindings (pybind11) — high-level API
+
+- `LSH(num_perm: int, num_bands: int, hash_kind=BandHashKind.splitmix64, seed: int=...)`
+- Build:
+  - `build_from_batch(ndarray: np.ndarray[uint64, (B, t)])` — zero/low-copy, requires C-contiguous and `t == num_perm`.
+  - `build_from_batch(rows: list[np.ndarray[uint64, (t,)]])` — zero/low-copy via row pointers.
+  - `build_from_batch(rows: list[list[int]])` — single temporary `(B, t)` copy.
+- Query (single):
+  - `query_candidates(digest: np.ndarray[uint64, (t,)]) -> list[int]` — zero-copy read of digest.
+  - `query_candidates(digest: Iterable[int]) -> list[int]` — converts to a temporary `uint64_t` buffer.
+- Query (batch):
+  - `batch_query_csr(arr: np.ndarray[uint64, (B, t)]) -> tuple[np.ndarray[uint64], np.ndarray[uint64]]`
+    - Returns CSR-style `(flat, indptr)` with zero-copy wrapping of newly allocated output; preferred for throughput and minimal Python overhead.
+  - `batch_query(arr: np.ndarray[uint64, (B, t)]) -> list[list[int]]`
+    - Convenience list-of-lists; constructs Python lists with preallocation to minimize overhead.
+
+Notes (performance/zero-copy):
+- NumPy arguments use c_style and noconvert policies in bindings. Callers must pass `dtype=np.uint64`, C-contiguous arrays; otherwise a `TypeError` is raised (no implicit casts), ensuring zero-copy on inputs.
+- All batch compute runs under GIL release. `batch_query_csr` minimizes Python allocations and is recommended for large batches.
 
 ### Internal data structures
 
@@ -161,6 +182,7 @@ uint64_t hash_band(const uint64_t* words, size_t band_size, uint64_t seed) {
 
 ### Future Plan
 
+- Add a returned [1,0] array when build_batch the LSH, which indicate whether each minhash(document) is firstly inserted into bands or not. Give us a rough deduplication result.
 - Add per‑band sharding (`tables[band][shard]`) to scale beyond `num_bands` threads.
 - Introduce MPSC owner routing for lock‑free multi‑producer → single‑writer shard inserts.
 - Implement big‑batch sort‑and‑build pipeline for extreme‑scale static builds.

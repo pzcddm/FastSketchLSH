@@ -55,8 +55,10 @@ public:
                           std::size_t t);
 
     // Query candidate IDs for a single digest of length t words.
-    std::vector<std::size_t> query_candidates(const std::uint64_t* digest,
-                                              std::size_t t) const;
+    // Fills and returns a reference to an internal buffer. Not thread-safe.
+    // The returned reference remains valid until the next call on this instance.
+    const std::vector<std::size_t>& query_candidates(const std::uint64_t* digest,
+                                                     std::size_t t) const;
 
     // Batch query: build a flattened list of candidates and CSR-style indptr from contiguous 2D buffer.
     void query_candidates_batch(const std::uint64_t* base,
@@ -89,9 +91,14 @@ private:
     std::size_t band_size_;
     BandHashKind hash_kind_;
     std::uint64_t seed_;
+    // Per-band random salt values used to randomize the hash function for each band.
+    // Each band uses its own salt to ensure independent hash partitions, improving LSH effectiveness.
     std::vector<std::uint64_t> band_salts_;
     std::vector<BandTable> tables_; // one table per band
     std::size_t next_id_; // monotonically increasing row id assigned on build
+    // Scratch buffer reused across queries to avoid per-call allocations.
+    // Mutable to allow filling in const query methods. Single-thread only.
+    mutable std::vector<std::size_t> last_candidates_;
 
     static inline std::uint64_t mix64(std::uint64_t x) {
         x ^= x >> 33;
