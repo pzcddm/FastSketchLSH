@@ -1,181 +1,282 @@
-import argparse
+"""
+test_lsh_dedup_comparison.py
+----------------------------
+Script comparing duplicate-flag outputs and timing between datasketch MinHashLSH
+and our FastSketchLSH (`src/fast_sketch_lsh.py`) using a real dataset.
+
+Procedure:
+- Load dataset `pinecone/core-2020-05-10-deduplication` via HuggingFace `datasets`.
+- Shuffle and take a user-specified ratio subset (default uses the full dataset).
+- For datasketch:
+  - Build MinHash (num_perm=128) for each document (simple whitespace tokens).
+  - Compute (bands, rows) via datasketch `_optimal_param(threshold, num_perm, 0.5, 0.5)`.
+  - Insert into MinHashLSH with the computed params.
+  - Duplicate flag for item i is 1 iff `len(query(minhash_i)) > 1`.
+- For FastSketchLSH:
+  - Use `sketch_size=128` and the same `bands` returned above, `threshold=0.8`.
+  - Duplicate flag for item i is 1 iff `len(query(tokens_i)) > 1`.
+
+We then compare the two binary flag vectors and assert a small disagreement rate.
+
+Notes:
+- This script downloads data and builds two LSH indexes.
+- If optional deps are missing, the script exits after printing a notice.
+
+Reference for datasketch MinHash LSH API: https://ekzhu.com/datasketch/lsh.html
+"""
+from __future__ import annotations
+
 import os
+import random
+from typing import List, Tuple
+import sys
 import time
-from collections import Counter
-from datasets import load_dataset
+import argparse
+import csv
+import math
+import json
+from pathlib import Path
+import numpy as np
+
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
+try:
+    from datasets import load_dataset  # type: ignore
+
+    HAVE_DATASETS = True
+except Exception:
+    HAVE_DATASETS = False
+
+try:
+    from datasketch import MinHash, MinHashLSH  # type: ignore
+    from rensa import RMinHash, RMinHashLSH
+    from FastSketchLSH import FastSimilaritySketch, LSH
+
+    HAVE_DATASKETCH = True
+except Exception:
+    HAVE_DATASKETCH = False
 
 
-def download_and_prepare_dataset(dataset_name="pt-sk/pretraining-dataset",
-                                 output_filename="pretraining_dataset_train_subset.txt",
-                                 num_examples_to_process=50000):
-    """
-    从 Hugging Face 国内镜像下载数据集，并只处理 'train' 分块的一个子集以避免内存问题。
-    """
-    # 设置 Hugging Face 端点为国内镜像
-    os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
+def _extract_text(record: dict) -> str:
+    """Best-effort extraction of text field from a dataset record."""
+    for key in ("text", "content", "document", "body", "raw"):
+        if key in record and isinstance(record[key], str) and record[key].strip():
+            return record[key]
+    # Fallback to concatenation of string-like fields
+    parts: List[str] = []
+    for v in record.values():
+        if isinstance(v, str) and v.strip():
+            parts.append(v)
+    return " \n ".join(parts)
 
-    print(f"Downloading dataset '{dataset_name}' from Hugging Face mirror...")
+
+def _tokenize_to_set(text: str) -> List[str]:
+    """Simple whitespace tokenization to a deduplicated list (set-like)."""
+    return list({tok for tok in text.lower().split() if tok})
+
+
+def _build_token_sets(texts: List[str]) -> List[List[str]]:
+    return [_tokenize_to_set(t) for t in texts]
+
+
+def _hamming_diff_rate(a: List[int], b: List[int]) -> Tuple[int, float]:
+    assert len(a) == len(b)
+    diffs = sum(1 for i, j in zip(a, b) if i != j)
+    return diffs, diffs / max(1, len(a))
+
+
+def main() -> None:
+    # Ensure project root on sys.path for importing `src.*`
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    # Deterministic shuffling
+    random.seed(12345)
+    ratio = 1.0
+
+    # Fast path: if loading precomputed sketches, skip dataset/tokenization entirely
+    cli_args = globals().get('CLI_ARGS', None)
+    use_precomputed = False
+    minhashes_path: Path | None = None
+    if cli_args and getattr(cli_args, 'load_fastsketch', None):
+        minhashes_path = Path(cli_args.load_fastsketch)
+        use_precomputed = minhashes_path.exists()
+
+    if not use_precomputed:
+        t0 = time.perf_counter()
+
+        # 设置本地缓存目录
+        cache_dir = os.path.join(project_root, "data", "huggingface_cache")
+        os.makedirs(cache_dir, exist_ok=True)
+
+        print(f"正在加载数据集到本地缓存: {cache_dir}")
+
+        # 检查缓存是否存在
+        cache_exists = os.path.exists(cache_dir) and os.listdir(cache_dir)
+        if cache_exists:
+            print("检测到本地缓存，将从缓存加载数据...")
+        else:
+            print("首次下载可能需要较长时间，请耐心等待...")
+            print("提示: 如果下载超时，可以先运行 'python test/download_dataset.py' 单独下载数据集")
+
+        try:
+            # 加载数据集，使用本地缓存目录
+            ds = load_dataset(
+                "HariomJangra/PreTraining-Dataset",
+                cache_dir=cache_dir,
+                download_mode="reuse_cache_if_exists"
+            )
+            # ds = load_dataset(
+            #     "shuyuej/pretraining-dataset"
+            # )
+            #  ds = load_dataset(
+            #     "pinecone/core-2020-05-10-deduplication"
+            # )
+
+            print(f"数据集加载完成，共 {len(ds['train'])} 条记录")
+            data = list(ds["train"])  # type: ignore[index]
+            print(f"数据集划分完毕")
+            random.shuffle(data)
+
+        except Exception as e:
+            print(f"\n错误: 数据集加载失败 - {type(e).__name__}: {str(e)}")
+            print("\n建议解决方案:")
+            print("1. 检查网络连接")
+            print("2. 先运行独立下载脚本:")
+            print("   python test/download_dataset.py")
+            print("3. 下载完成后再次运行本脚本")
+            raise SystemExit(1)
+
+        if not (0 < ratio <= 1.0):
+            raise SystemExit(f"--ratio must be in (0, 1], got {ratio}")
+        take = max(1, int(ratio * len(data)))
+        sample = data[:take]
+        texts = [_extract_text(rec) for rec in sample]
+        token_build_start = time.perf_counter()
+        token_sets = _build_token_sets(texts)
+        token_build_time = time.perf_counter() - token_build_start
+
+    # Configuration per user request: threshold=0.8
+    threshold = 0.8
+    # Start with a requested num_perm (may be adjusted by _optimal_param)
+    num_perm = 128
+    # Use datasketch's _optimal_param to choose (bands, rows) for given (threshold, num_perm)
+    # from datasketch.lsh import _optimal_param  # type: ignore
+    # bands, rows = _optimal_param(threshold, num_perm, 0.5, 0.5)
+    bands = 8
+    rows = 16
+
+    # reset the num_perm to the bands * rows (Cause this is the real num_perm we use)
+    num_perm = bands * rows
+    print(f"bands: {bands}, rows: {rows}, num_perm: {num_perm}")
+    # Report OpenMP runtime threads from extension if available
     try:
-        # 正确加载数据集，它包含 train/validation/test 分块
-        dataset = load_dataset(dataset_name, trust_remote_code=True)
-        print("Dataset downloaded successfully. Available splits:", list(dataset.keys()))
+        import FastSketchLSH as _fs
+        print(f"OpenMP max threads: {_fs.omp_max_threads()} (OMP_NUM_THREADS={os.environ.get('OMP_NUM_THREADS')})")
+    except Exception:
+        pass
 
-        # 从 'train' 分块中选择前 N 条记录进行处理，避免内存溢出
-        print(f"Selecting the first {num_examples_to_process} examples from the 'train' split...")
-        if 'train' not in dataset:
-            raise ValueError("Dataset does not contain a 'train' split.")
+    # RminHashLSH (only when we built token sets)
+    # if not use_precomputed:
+    #     lsh_rs = RMinHashLSH(threshold=threshold, num_perm=num_perm, num_bands=bands)
+    #     # Build MinHashes
+    #     token_sets_str = [[str(tok) for tok in tokens] for tokens in token_sets]
+    #     rs_minhash_start = time.perf_counter()
+    #     minhashes = []
+    #     for tokens in token_sets_str:
+    #         m = RMinHash(num_perm=num_perm, seed=42)
+    #         m.update(tokens)
+    #         minhashes.append(m)
+    #     rs_minhash_time = time.perf_counter() - rs_minhash_start
+    #     # Insert into RMinhash LSH
+    #     rs_insert_start = time.perf_counter()
+    #     for idx, m in enumerate(minhashes):
+    #         lsh_rs.insert(idx, m)
+    #     rs_insert_time = time.perf_counter() - rs_insert_start
+    #     # Query for flags
+    #     rs_query_start = time.perf_counter()
+    #     RMinhashlsh_flags = [1 if len(lsh_rs.query(m)) > 1 else 0 for m in minhashes]
+    #     rs_query_time = time.perf_counter() - rs_query_start
 
-        subset = dataset['train'].select(range(num_examples_to_process))
-
-        print(f"Extracting data to '{output_filename}'...")
-        with open(output_filename, 'w', encoding='utf-8') as f:
-            for item in subset:
-                text_line = item['text'].replace('\n', ' ').strip()
-                f.write(text_line + '\n')
-
-        print(f"Dataset extraction complete. Input file '{output_filename}' is ready.")
-        return output_filename
-
-    except Exception as e:
-        print(f"\nError: Failed to download or process dataset: {e}")
-        print("Please ensure you have an internet connection and the required libraries installed:")
-        print("pip install datasets huggingface_hub")
-        return None
-
-
-def process_data(input_file, output_file, sort_elements_desc, sort_sets_desc, dedup_items, dedup_sets, write_id_prefix,
-                 set_type):
-    """
-    使用 Python 复现 C++ 数据处理逻辑。
-    """
-    str_map_id = {}
-    id_counter = Counter()
-    sets = []
-
-    if dedup_sets:
-        pre_sets_unique = set()
-
-    # --- 阶段 1: 读取文件，将字符串映射为初始 ID，并统计频率 ---
-    print(f"Reading and processing '{input_file}'...")
-    with open(input_file, 'r', encoding='utf-8') as infile:
-        for line in infile:
-            raw_elements = line.strip().split()
-            if not raw_elements:
-                continue
-            current_set_ids = []
-            if dedup_items:
-                processed_elements = list(dict.fromkeys(raw_elements))
-            else:
-                line_element_counter = Counter()
-                processed_elements = []
-                for element in raw_elements:
-                    unique_element_str = f"{element}{line_element_counter[element]}"
-                    processed_elements.append(unique_element_str)
-                    line_element_counter[element] += 1
-            for element in processed_elements:
-                if element not in str_map_id:
-                    new_id = len(str_map_id)
-                    str_map_id[element] = new_id
-                element_id = str_map_id[element]
-                current_set_ids.append(element_id)
-            if dedup_sets:
-                pre_sets_unique.add(frozenset(current_set_ids))
-            else:
-                sets.append(current_set_ids)
-                for element_id in current_set_ids:
-                    id_counter[element_id] += 1
-
-    if dedup_sets:
-        sets = [list(s) for s in pre_sets_unique]
-        for s in sets:
-            for element_id in s:
-                id_counter[element_id] += 1
-
-    # --- 阶段 2: 基于频率对 ID 进行重映射 ---
-    sorted_ids = sorted(id_counter.keys(), key=lambda x: (id_counter[x], x))
-    new_mapping = {old_id: new_id for new_id, old_id in enumerate(sorted_ids)}
-
-    # --- 阶段 3: 应用新映射并排序 ---
-    processed_sets = []
-    for s in sets:
-        new_set = [new_mapping[old_id] for old_id in s]
-        new_set.sort(reverse=sort_elements_desc)
-        processed_sets.append(new_set)
-    processed_sets.sort(key=lambda s: (len(s), s), reverse=sort_sets_desc)
-
-    # --- 阶段 4: 写入输出文件 ---
-    print(f"Writing processed data to '{output_file}'...")
-    with open(output_file, 'w', encoding='utf-8') as outfile:
-        for i, s in enumerate(processed_sets):
-            line_parts = []
-            if write_id_prefix:
-                line_parts.append(f"{set_type}{i}")
-            line_parts.extend(map(str, s))
-            outfile.write(" ".join(line_parts) + "\n")
-
-
-def main():
-    # --- 步骤 1: 下载和准备数据 ---
-    input_filename = "pretraining_dataset_train_subset.txt"
-    if not os.path.exists(input_filename):
-        # 您可以在这里调整要处理的数据量
-        input_filename = download_and_prepare_dataset(
-            output_filename=input_filename,
-            num_examples_to_process=50000
-        )
-        if not input_filename:
-            return
+    # Band-parallel LSH (new)
+    # Build or load MinHashes (uint64 sketches)
+    if use_precomputed:
+        fs_minhash_start = time.perf_counter()
+        minhashes = np.load(str(minhashes_path))
+        fs_minhash_time = time.perf_counter() - fs_minhash_start
     else:
-        print(f"Found existing dataset file: '{input_filename}'. Skipping download.")
+        token_sets_str = [[str(tok).encode('utf-8') for tok in tokens] for tokens in token_sets]
+        fs_minhash_start = time.perf_counter()
+        m = FastSimilaritySketch(sketch_size=num_perm, seed=42)
+        # minhashes = m.sketch_batch(token_sets_str, num_threads=0)  # np.ndarray (B, t), dtype=uint64
+        minhashes = m.sketch_batch(token_sets_str, num_threads=16)
+        fs_minhash_time = time.perf_counter() - fs_minhash_start
+        if cli_args and getattr(cli_args, 'save_fastsketch', None):
+            outp = Path(cli_args.save_fastsketch)
+            outp.parent.mkdir(parents=True, exist_ok=True)
+            np.save(str(outp), minhashes)
 
-    # --- 步骤 2: 解析命令行参数并执行数据处理 ---
-    parser = argparse.ArgumentParser(
-        description="使用 Python 实现的数据处理工具，功能与提供的 C++ 代码一致。",
-        formatter_class=argparse.RawTextHelpFormatter
-    )
-    parser.add_argument('input_file', nargs='?', default=input_filename,
-                        help=f"输入文件的路径 (默认: {input_filename})")
-    parser.add_argument('output_file',
-                        help="输出文件的路径 (例如: processed_data.txt)")
-    group1 = parser.add_mutually_exclusive_group()
-    group1.add_argument('--inc1', dest='sort_elements_desc', action='store_false', help='按频率递增排序集合内元素')
-    group1.add_argument('--dec1', dest='sort_elements_desc', action='store_true',
-                        help='按频率递减排序集合内元素 (默认)')
-    group2 = parser.add_mutually_exclusive_group()
-    group2.add_argument('--inc2', dest='sort_sets_desc', action='store_false', help='按长度递增排序集合')
-    group2.add_argument('--dec2', dest='sort_sets_desc', action='store_true', help='按长度递减排序集合 (默认)')
-    parser.add_argument('--dedupitems', action='store_true', default=False, help='去除集合中重复的元素')
-    parser.add_argument('--dedup', dest='dedup_sets', action='store_true', default=False, help='去除数据集中重复的集合')
-    parser.add_argument('--wid', nargs=1, metavar='TYPE', help='在每行输出前添加 ID，并指定类型 (例如: r 或 s)')
-    parser.set_defaults(sort_elements_desc=True, sort_sets_desc=True)
-    args = parser.parse_args()
+    # Build band LSH from batch sketches
+    band_lsh = LSH(num_perm=num_perm, num_bands=bands)
+    fs_build_start = time.perf_counter()
+    band_lsh.build_from_batch(minhashes)
+    fs_build_time = time.perf_counter() - fs_build_start
 
-    set_type = args.wid[0] if args.wid else None
+    # Query flags (batch): duplicate if bucket size per row > 1
+    fs_query_start = time.perf_counter()
+    flat, indptr = band_lsh.batch_query_csr(minhashes)
+    B = int(minhashes.shape[0])
+    fs_band_flags = [1 if int(indptr[i + 1] - indptr[i]) > 1 else 0 for i in range(B)]
+    fs_query_time = time.perf_counter() - fs_query_start
+    # Derive flags from batch CSR result
+    print(sum(fs_band_flags))
 
-    print("\n--- Starting Data Processing ---")
-    print(f"Input file: {args.input_file}")
-    print(f"Output file: {args.output_file}")
-    print(f"Sort elements by frequency: {'decreasing' if args.sort_elements_desc else 'increasing'}")
-    print(f"Sort sets by length: {'decreasing' if args.sort_sets_desc else 'increasing'}")
-    if args.dedupitems: print("Deduplicate items within sets: ON")
-    if args.dedup_sets: print("Deduplicate entire sets: ON")
+    # Query flags (single, NumPy-returning API): loop calling single-item API, duplicate if >1
+    fs_single_query_start = time.perf_counter()
+    Minhashlsh_flags = [1 if len(band_lsh.query_candidates(m)) > 1 else 0 for m in minhashes]
+    fs_single_query_time = time.perf_counter() - fs_single_query_start
 
-    start_time = time.time()
-    process_data(
-        input_file=args.input_file,
-        output_file=args.output_file,
-        sort_elements_desc=args.sort_elements_desc,
-        sort_sets_desc=args.sort_sets_desc,
-        dedup_items=args.dedupitems,
-        dedup_sets=args.dedup_sets,
-        write_id_prefix=bool(args.wid),
-        set_type=set_type
-    )
-    end_time = time.time()
+    # Query candidates (batch, list-of-lists) and time
+    fs_list_batch_start = time.perf_counter()
+    lol = band_lsh.batch_query(minhashes)
+    # Flags derived from list-of-lists
+    fs_list_flags = [1 if len(row) > 1 else 0 for row in lol]
 
-    print("\nProcessing successful!")
-    print(f"Total time taken: {end_time - start_time:.2f}s")
+    fs_list_batch_time = time.perf_counter() - fs_list_batch_start
+    print(sum(fs_list_flags))
+    # if not use_precomputed:
+    # print(f"  Rensa: build_minhash={rs_minhash_time:.3f}, insert={rs_insert_time:.3f}, query={rs_query_time:.3f}")
+    print(
+        f"  FastSketch LSH: build_minhash={fs_minhash_time:.3f}, build={fs_build_time:.3f}, query_batch={fs_query_time:.3f}, query_single_np={fs_single_query_time:.3f}, query_batch_list={fs_list_batch_time:.3f}")
 
 
 if __name__ == "__main__":
+    if not HAVE_DATASETS:
+        print("datasets package not installed; exiting.")
+        raise SystemExit(0)
+    if not HAVE_DATASKETCH:
+        print("datasketch package not installed; exiting.")
+        raise SystemExit(0)
+    parser = argparse.ArgumentParser(
+        description=(
+            "Compare duplicate-flag outputs and timing between datasketch MinHashLSH "
+            "and FastSketchLSH on a real dataset."
+        )
+    )
+    parser.add_argument(
+        "--save-fastsketch",
+        type=str,
+        default="",
+        help="Path to save precomputed FastSimilaritySketch minhashes as .npy (optional)",
+    )
+    parser.add_argument(
+        "--load-fastsketch",
+        type=str,
+        default="",
+        help="Path to load precomputed FastSimilaritySketch minhashes .npy (optional)",
+    )
+    args = parser.parse_args()
+    # Expose args for helper logic above
+    globals()['CLI_ARGS'] = args
     main()
+
