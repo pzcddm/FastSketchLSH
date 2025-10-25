@@ -92,7 +92,12 @@ def main() -> None:
 
     # Fast path: if loading precomputed sketches, skip dataset/tokenization entirely
     cli_args = globals().get('CLI_ARGS', None)
-    lsh_num_threads = 1
+    lsh_num_threads = 0
+    if cli_args is not None and hasattr(cli_args, "lsh_threads"):
+        try:
+            lsh_num_threads = int(getattr(cli_args, "lsh_threads"))
+        except (TypeError, ValueError):
+            lsh_num_threads = 0
     use_precomputed = False
     minhashes_path: Path | None = None
     if cli_args and getattr(cli_args, 'load_fastsketch', None):
@@ -176,7 +181,9 @@ def main() -> None:
 
     # Build band LSH from batch sketches
     band_lsh = LSH(num_perm=num_perm, num_bands=bands, num_threads=lsh_num_threads)
-    print(f"FastSketch LSH threads (requested {lsh_num_threads}): {band_lsh.num_threads}")
+    resolved_threads = band_lsh.num_threads
+    resolved_label = resolved_threads if resolved_threads > 0 else "auto"
+    print(f"FastSketch LSH threads (requested {lsh_num_threads}): {resolved_label}")
     fs_build_start = time.perf_counter()
     band_lsh.build_from_batch(minhashes)
     fs_build_time = time.perf_counter() - fs_build_start
@@ -243,7 +250,7 @@ if __name__ == "__main__":
         "--lsh-threads",
         type=int,
         default=0,
-        help="Number of OpenMP threads for FastSketchLSH (0 uses library default)",
+        help="Number of OpenMP threads for FastSketchLSH (<=0 uses library default)",
     )
     args = parser.parse_args()
     # Expose args for helper logic above

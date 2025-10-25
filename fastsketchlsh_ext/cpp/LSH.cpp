@@ -68,15 +68,16 @@ LSH::LSH(std::size_t num_perm,
 }
 
 void LSH::set_num_threads(int num_threads) {
-    if (num_threads < 0) {
-        throw std::invalid_argument("num_threads must be >= 0");
-    }
 #ifndef _OPENMP
     if (num_threads > 1) {
         throw std::invalid_argument("OpenMP support is disabled; num_threads must be 0 or 1");
     }
 #endif
-    num_threads_ = num_threads;
+    if (num_threads <= 0) {
+        num_threads_ = 0; // auto (use all available threads)
+    } else {
+        num_threads_ = num_threads;
+    }
 }
 
 // Reserve space in each band's hash table for the expected number of items.

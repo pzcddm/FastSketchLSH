@@ -507,11 +507,11 @@ PYBIND11_MODULE(FastSketchLSH, m) {
            py::arg("hash_kind") = LSH::BandHashKind::splitmix64,
            py::arg("seed") = 0x9e3779b97f4a7c15ULL,
            py::arg("num_threads") = 0,
-           "Initialize band-parallel LSH (num_threads=0 uses OpenMP default)")
+           "Initialize band-parallel LSH (num_threads<=0 uses OpenMP default)")
       .def_property_readonly("num_threads", &LSH::num_threads,
            "Configured OpenMP thread count (0 means auto)")
       .def("set_num_threads", &LSH::set_num_threads, py::arg("num_threads"),
-           "Update the OpenMP thread count (0 means auto, requires OpenMP for >1)")
+           "Update the OpenMP thread count (<=0 means auto, requires OpenMP for >1)")
       .def("reserve", &LSH::reserve, py::arg("expected_num_items"),
            "Reserve internal capacity for expected number of items")
       .def("clear", &LSH::clear, "Clear all tables and reset state")

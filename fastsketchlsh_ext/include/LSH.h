@@ -83,7 +83,7 @@ public:
     inline std::size_t num_bands() const noexcept { return num_bands_; }
     inline std::size_t band_size() const noexcept { return band_size_; }
     inline int num_threads() const noexcept { return num_threads_; }
-    void set_num_threads(int num_threads);
+    void set_num_threads(int num_threads); // <=0 means auto (use OpenMP default/all threads)
     // threshold removed; kept in constructor signature for API compatibility
 
 private:
