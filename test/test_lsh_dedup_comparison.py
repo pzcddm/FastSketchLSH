@@ -100,7 +100,8 @@ def main() -> None:
 
     if not use_precomputed:
         t0 = time.perf_counter()
-        ds = load_dataset("pinecone/core-2020-05-10-deduplication")
+        # ds = load_dataset("pinecone/core-2020-05-10-deduplication")
+        ds = load_dataset("HariomJangra/PreTraining-Dataset")
         data = list(ds["train"])  # type: ignore[index]
         random.shuffle(data)
 
