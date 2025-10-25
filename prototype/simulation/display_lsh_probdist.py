@@ -14,13 +14,13 @@ from `fast_sketch_lsh_simulation.py` and `kmins_lsh_curve.py`:
   Jaccard similarity.
 
 Outputs:
-- Saves figures into `simulation/figures/`:
+- Saves figures into `prototype/simulation/figures/`:
   - `kmins_vs_fastsketch_in_lsh_probdist.png`
   - `kmins_vs_fastsketch_probdist.png`
 
 Notes:
 - This script does NOT save any temporary `.npy` files.
-- Requires the project `src/` and this `simulation/` directory to be importable.
+- Requires the project `prototype` directory (with `src/` and `simulation/`) to be importable.
 """
 
 from __future__ import annotations
@@ -45,14 +45,13 @@ plt.rcParams.update({
 
 # Ensure imports work when running this file directly
 CURRENT_DIR = os.path.dirname(__file__)
-PROJECT_ROOT = os.path.join(CURRENT_DIR, "..")
-sys.path.append(PROJECT_ROOT)
-sys.path.append(os.path.join(PROJECT_ROOT, 'src'))
-sys.path.append(CURRENT_DIR)
+PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, '..', '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
-from src.fast_sketch_lsh import FastSketchLSH  # type: ignore
-from src.fast_sketch import FastSimilaritySketch  # type: ignore
-from util import generate_interval_sets_with_jaccard, estimate_jaccard  # type: ignore
+from prototype.src.fast_sketch_lsh import FastSketchLSH  # type: ignore
+from prototype.src.fast_sketch import FastSimilaritySketch  # type: ignore
+from prototype.simulation.util import generate_interval_sets_with_jaccard, estimate_jaccard  # type: ignore
 
 
 """
@@ -82,7 +81,7 @@ RANDOM_SEED_PROBDIST: int = 52     # for probability distribution comparison
 
 
 def _ensure_figures_dir() -> str:
-    """Create and return the `simulation/figures` directory path."""
+    """Create and return the `prototype/simulation/figures` directory path."""
     figures_dir = os.path.join(CURRENT_DIR, 'figures')
     os.makedirs(figures_dir, exist_ok=True)
     return figures_dir
@@ -174,7 +173,7 @@ def plot_lsh_curve(
 ) -> None:
     """Plot theoretical LSH curve and FastSketch LSH simulated collision probability.
 
-    Saves: `simulation/figures/kmins_vs_fastsketch_in_lsh_probdist.png`.
+    Saves: `prototype/simulation/figures/kmins_vs_fastsketch_in_lsh_probdist.png`.
     """
     figures_dir = _ensure_figures_dir()
     plt.figure(figsize=(12, 8))
@@ -227,7 +226,7 @@ def plot_kmins_and_fastsketch_distribution(
 ) -> None:
     """Plot k-mins theoretical acceptance vs FastSketch simulated acceptance probability.
 
-    Saves: `simulation/figures/kmins_theory_and_fastsketch_distribution.png`.
+    Saves: `prototype/simulation/figures/kmins_theory_and_fastsketch_distribution.png`.
 
     For J in [0.37, 0.9], uses 2000 trials; otherwise 100 trials.
 
@@ -340,6 +339,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
 

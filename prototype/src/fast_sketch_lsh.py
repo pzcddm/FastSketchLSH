@@ -27,8 +27,9 @@ Date: (today's date)
 """
 from typing import Any, Dict, Set, List, Iterable, Optional
 from collections import defaultdict
-from src.fast_sketch import FastSimilaritySketch
 import numpy as np
+
+from .fast_sketch import FastSimilaritySketch
 
 class FastSketchLSH:
     """

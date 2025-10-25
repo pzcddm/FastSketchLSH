@@ -5,7 +5,7 @@ import mmh3
 import heapq
 
 from FastSketchLSH import FastSimilaritySketch
-from simulation.util import estimate_jaccard, actual_jaccard
+from prototype.simulation.util import estimate_jaccard, actual_jaccard
 
 
 if __name__ == '__main__':

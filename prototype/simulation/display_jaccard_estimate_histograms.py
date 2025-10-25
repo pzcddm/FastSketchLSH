@@ -12,10 +12,10 @@ of Jaccard estimates from FastSimilaritySketch and KMinSketch simulations.
 
 Each subplot title includes the empirical variance.
 
-Figures are saved to `simulation/figures/combined_fast_and_kmins_hist.png`.
+Figures are saved to `prototype/simulation/figures/combined_fast_and_kmins_hist.png`.
 
-This script reuses dataset generators and estimators from `simulation.util` and
-project `src/` implementations, without duplicating class definitions.
+This script reuses dataset generators and estimators from `prototype.simulation.util` and
+project `prototype/src/` implementations, without duplicating class definitions.
 """
 
 from __future__ import annotations
@@ -29,12 +29,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Ensure project paths
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-sys.path.insert(0, PROJECT_ROOT)
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
-from simulation.util import generate_interval_sets_with_jaccard, estimate_jaccard  # type: ignore
-from src.fast_sketch import FastSimilaritySketch  # type: ignore
-from src.kmins_sketch import KMinSketch  # type: ignore
+from prototype.simulation.util import generate_interval_sets_with_jaccard, estimate_jaccard  # type: ignore
+from prototype.src.fast_sketch import FastSimilaritySketch  # type: ignore
+from prototype.src.kmins_sketch import KMinSketch  # type: ignore
 
 
 def run_fastsketch_simulation(
@@ -181,6 +182,5 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
-
 
 

@@ -23,14 +23,16 @@ import csv
 import os
 import sys
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 from typing import List, Tuple, Iterable
 
 from FastSketchLSH import FastSimilaritySketch
-from src.datasketch_sketch import DatasketchMinHashSketch
-from src.cmins_sketch import CMinHashSketch
-from src.rmins_sketch import RMinHashSketch
-from simulation.util import estimate_jaccard, actual_jaccard, generate_interval_sets_with_jaccard
+from prototype.src.datasketch_sketch import DatasketchMinHashSketch
+from prototype.src.cmins_sketch import CMinHashSketch
+from prototype.src.rmins_sketch import RMinHashSketch
+from prototype.simulation.util import estimate_jaccard, actual_jaccard, generate_interval_sets_with_jaccard
 
 
  

@@ -11,11 +11,11 @@ import numpy as np
 import sys
 import os
 
-# Allow running as script or module
-if __name__ == "__main__":
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
-from src.fast_sketch_lsh import FastSketchLSH
+from prototype.src.fast_sketch_lsh import FastSketchLSH
 
 # Parameters
 K = 128

@@ -1,6 +1,6 @@
 ## Simulation Overview
 
-This folder contains small, self-contained scripts to visualize and compare the behavior of the sketching and LSH components in this project. The simulations generate figures under `simulation/figures/` and reuse implementations from `src/` and helpers in `simulation/util.py`.
+This folder contains small, self-contained scripts to visualize and compare the behavior of the sketching and LSH components in this project. The simulations generate figures under `prototype/simulation/figures/` and reuse implementations from `prototype/src/` and helpers in `prototype/simulation/util.py`.
 
 ### What’s included
 
@@ -13,23 +13,23 @@ This folder contains small, self-contained scripts to visualize and compare the 
 
 ### Quick start (from project root)
 
-Use Python 3 to run scripts. Figures will be saved in `simulation/figures/`.
+Use Python 3 to run scripts. Figures will be saved in `prototype/simulation/figures/`.
 
 ```python
 # Generate the side-by-side histograms figure
-from simulation import display_jaccard_estimate_histograms as hist
+from prototype.simulation import display_jaccard_estimate_histograms as hist
 hist.main()
 
 # Generate the LSH curve and probability distribution comparison figures
-from simulation import display_lsh_probdist as lsh
+from prototype.simulation import display_lsh_probdist as lsh
 lsh.main()
 ```
 
 Alternatively, you can run them as modules (from the project root):
 
 ```
-python3 -m simulation.display_jaccard_estimate_histograms
-python3 -m simulation.display_lsh_probdist
+python3 -m prototype.simulation.display_jaccard_estimate_histograms
+python3 -m prototype.simulation.display_lsh_probdist
 ```
 
 ### Notes
@@ -42,5 +42,4 @@ python3 -m simulation.display_lsh_probdist
 
 - **Variance comparison (k = 128)**: In `combined_fast_and_kmins_hist.png`, the variance of FastSketch is **0.001447** while KMinSketch is **0.002175**. **FastSketch has lower variance**, indicating **higher estimation accuracy** at the same sketch size.
 - **Probability distributions**: The probability distribution results show **FastSketch and k-mins are almost identical**, confirming comparable behavior across Jaccard values.
-
 

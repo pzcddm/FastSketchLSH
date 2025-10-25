@@ -3,6 +3,7 @@ import pickle
 import time
 import argparse
 import random
+import sys
 from collections import defaultdict
 from typing import List, Set, Dict, Any, Tuple
 
@@ -14,6 +15,10 @@ from tqdm import tqdm
 from datasketch import MinHash, MinHashLSH
 from datasketch.lsh import _optimal_param
 from rensa import RMinHash, RMinHashLSH
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 
 class Timer:
@@ -469,7 +474,7 @@ def run_fastsketch_lsh_with_candidates(
         random_seed: int = 42
 ) -> Dict[str, Any]:
     """Run FastSketch LSH and return candidate sets."""
-    from src.fast_sketch_lsh import FastSketchLSH
+    from prototype.src.fast_sketch_lsh import FastSketchLSH
     n = len(token_sets)
 
     # Phase 1: Insert

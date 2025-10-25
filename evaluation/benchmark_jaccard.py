@@ -11,7 +11,9 @@ from tqdm import tqdm
 from collections import defaultdict, deque
 from typing import List, Set, Dict, Any, Tuple
 
-from datasketch.lsh import _optimal_param
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 
 def create_rensa_minhash(text, num_perm, seed):
@@ -124,7 +126,7 @@ def run_fastsketch_lsh(
         random_seed: int = 42,
         final_jaccard_threshold: float = 0.8  # Final Jaccard threshold parameter (not used here)
 ) -> Dict[str, Any]:
-    from src.fast_sketch_lsh import FastSketchLSH
+    from prototype.src.fast_sketch_lsh import FastSketchLSH
     n = len(token_sets)
     # Phase1: Insert
     start1 = time.perf_counter()

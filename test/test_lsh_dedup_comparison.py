@@ -2,7 +2,6 @@
 test_lsh_dedup_comparison.py
 ----------------------------
 Script comparing duplicate-flag outputs and timing between datasketch MinHashLSH
-and our FastSketchLSH (`src/fast_sketch_lsh.py`) using a real dataset.
 
 Procedure:
 - Load dataset `pinecone/core-2020-05-10-deduplication` via HuggingFace `datasets`.
@@ -82,7 +81,7 @@ def _hamming_diff_rate(a: List[int], b: List[int]) -> Tuple[int, float]:
     return diffs, diffs / max(1, len(a))
 
 def main() -> None:
-    # Ensure project root on sys.path for importing `src.*`
+    # Ensure project root on sys.path for importing `prototype.*`
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
