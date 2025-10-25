@@ -1,0 +1,10 @@
+# Core Python dependencies for FastSketchLSH tooling, benchmarks, and simulations
+datasketch
+datasets
+matplotlib
+mmh3
+numpy
+pandas
+pybind11
+rensa
+tqdm
