@@ -6,7 +6,7 @@ FastSketchLSH is a research project for using Fast Similarity Sketch (a very eff
 
 Build and install the native extension first:
 ```bash
-cd cpp_src
+cd fastsketchlsh_ext
 pip install .
 ```
 
@@ -65,7 +65,7 @@ The end goal is to accelerate deduplication over very large datasets. The fast s
 
 ## Project layout
 
-- `cpp_src/`: C++17/AVX2/AVX-512 extension exposing `FastSketchLSH` to Python (install with `pip install .`).
+- `fastsketchlsh_ext/`: C++17/AVX2/AVX-512 extension exposing `FastSketchLSH` to Python (install with `pip install .`).
 - `src/`: Reference Python wrappers for other sketches (datasketch, rensa cmins/rmins).
 - `simulation/`: Reproducible small-scale simulations and utilities.
 - `test/`: Accuracy and speed comparisons; use `test_comparison.py` for end-to-end benchmarking.

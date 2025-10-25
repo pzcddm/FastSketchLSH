@@ -32,9 +32,9 @@
 
 ### File layout
 
-- `cpp_src/include/LSH.h` — public interface and lightweight inline helpers
-- `cpp_src/cpp/LSH.cpp` — implementation (hashing, build/query, threading)
-- Bindings: `cpp_src/cpp/init.cpp` exposes batch APIs for Python (2D ndarray fast paths, list of ndarrays, list of lists); all heavy paths release the GIL.
+- `fastsketchlsh_ext/include/LSH.h` — public interface and lightweight inline helpers
+- `fastsketchlsh_ext/cpp/LSH.cpp` — implementation (hashing, build/query, threading)
+- Bindings: `fastsketchlsh_ext/cpp/init.cpp` exposes batch APIs for Python (2D ndarray fast paths, list of ndarrays, list of lists); all heavy paths release the GIL.
 
 ### Python bindings (pybind11) — high-level API
 

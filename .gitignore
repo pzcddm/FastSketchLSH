@@ -1,6 +1,6 @@
 __pycache__
-cpp_src/build
-cpp_src/*-info/
+fastsketchlsh_ext/build
+fastsketchlsh_ext/*-info/
 FastSketchLSH.cp311*
 .vscode/
 .cursor/

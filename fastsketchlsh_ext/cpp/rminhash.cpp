@@ -366,8 +366,8 @@ double RMinHashSIMD::jaccard(const RMinHashSIMD& other) const {
 // ===================== Demo =====================
 #ifdef DEMO_MAIN
 
-// g++ -std=c++17 -O3 -Wall -Wextra -DRMINHASH_SIMD_AVX512 -march=skylake-avx512 -I "D:\Codes\InvestigateDocDuplicate\cpp_src\include" -c "D:\Codes\InvestigateDocDuplicate\cpp_src\cpp\rminhash.cpp" -o "D:\Codes\InvestigateDocDuplicate\cpp_src\build\rminhash_avx512.o"
-// g++ -std=c++17 -O3 -Wall -Wextra -DRMINHASH_SIMD_AVX512 -DDEMO_MAIN -march=skylake-avx512 -I "D:\Codes\InvestigateDocDuplicate\cpp_src\include" "D:\Codes\InvestigateDocDuplicate\cpp_src\cpp\rminhash.cpp" "D:\Codes\InvestigateDocDuplicate\cpp_src\cpp\murmurhash3.cpp" -o "D:\Codes\InvestigateDocDuplicate\cpp_src\build\rminhash_demo_avx512.exe"
+// g++ -std=c++17 -O3 -Wall -Wextra -DRMINHASH_SIMD_AVX512 -march=skylake-avx512 -I "D:\Codes\InvestigateDocDuplicate\fastsketchlsh_ext\include" -c "D:\Codes\InvestigateDocDuplicate\fastsketchlsh_ext\cpp\rminhash.cpp" -o "D:\Codes\InvestigateDocDuplicate\fastsketchlsh_ext\build\rminhash_avx512.o"
+// g++ -std=c++17 -O3 -Wall -Wextra -DRMINHASH_SIMD_AVX512 -DDEMO_MAIN -march=skylake-avx512 -I "D:\Codes\InvestigateDocDuplicate\fastsketchlsh_ext\include" "D:\Codes\InvestigateDocDuplicate\fastsketchlsh_ext\cpp\rminhash.cpp" "D:\Codes\InvestigateDocDuplicate\fastsketchlsh_ext\cpp\murmurhash3.cpp" -o "D:\Codes\InvestigateDocDuplicate\fastsketchlsh_ext\build\rminhash_demo_avx512.exe"
 int main() {
     // Generate two integer sets for testing
     // A = {0, 1, ..., 1000}  

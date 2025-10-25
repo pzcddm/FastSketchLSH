@@ -1,7 +1,7 @@
 //
 // High-throughput band-parallel LSH (fused compute+insert)
 //
-// This header declares the C++ LSH class described in cpp_src/LSH_PLAN.md.
+// This header declares the C++ LSH class described in fastsketchlsh_ext/LSH_PLAN.md.
 //
 // Design goals:
 //  - Lock-free across bands in steady state (one thread per band)
@@ -143,4 +143,3 @@ private:
 #endif
     }
 };
-
