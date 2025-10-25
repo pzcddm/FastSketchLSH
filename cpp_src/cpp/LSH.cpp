@@ -40,25 +40,43 @@ namespace {
 LSH::LSH(std::size_t num_perm,
          std::size_t num_bands,
          BandHashKind hash_kind,
-         std::uint64_t seed)
+         std::uint64_t seed,
+         int num_threads)
     : num_perm_(num_perm),
       num_bands_(num_bands),
       band_size_(0),
       hash_kind_(hash_kind),
       seed_(seed),
-      next_id_(0) {
+      band_salts_(),
+      tables_(),
+      next_id_(0),
+      last_candidates_(),
+      num_threads_(0) {
     if (num_perm_ == 0 || num_bands_ == 0) {
         throw std::invalid_argument("num_perm and num_bands must be > 0");
     }
     if (num_perm_ % num_bands_ != 0) {
         throw std::invalid_argument("num_perm must be divisible by num_bands");
     }
+    set_num_threads(num_threads);
     band_size_ = num_perm_ / num_bands_;
     band_salts_.resize(num_bands_);
     for (std::size_t b = 0; b < num_bands_; ++b) {
         band_salts_[b] = make_salt(seed_, b);
     }
     tables_.resize(num_bands_);
+}
+
+void LSH::set_num_threads(int num_threads) {
+    if (num_threads < 0) {
+        throw std::invalid_argument("num_threads must be >= 0");
+    }
+#ifndef _OPENMP
+    if (num_threads > 1) {
+        throw std::invalid_argument("OpenMP support is disabled; num_threads must be 0 or 1");
+    }
+#endif
+    num_threads_ = num_threads;
 }
 
 // Reserve space in each band's hash table for the expected number of items.
@@ -100,7 +118,15 @@ void LSH::build_from_batch(const std::uint64_t* base,
     reserve(batch);
 
     // Parallelize across bands with OpenMP. Each band owns its table exclusively.
+    const int threads = resolved_num_threads();
+#ifndef _OPENMP
+    (void)threads;
+#endif
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static) num_threads(threads)
+#else
     #pragma omp parallel for schedule(static)
+#endif
     for (std::size_t b = 0; b < num_bands_; ++b) {
         BandTable& table = tables_[b];
         const std::uint64_t salt = band_salts_[b];
@@ -132,7 +158,15 @@ void LSH::build_from_batch(const std::uint64_t* const* rows,
     reserve(batch);
 
     // Parallelize across bands with OpenMP. Each band owns its table exclusively.
+    const int threads = resolved_num_threads();
+#ifndef _OPENMP
+    (void)threads;
+#endif
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static) num_threads(threads)
+#else
     #pragma omp parallel for schedule(static)
+#endif
     for (std::size_t b = 0; b < num_bands_; ++b) {
         BandTable& table = tables_[b];
         const std::uint64_t salt = band_salts_[b];
@@ -187,7 +221,15 @@ void LSH::query_candidates_batch(const std::uint64_t* base,
 
     // Pass 1: compute per-row counts in parallel
     std::vector<std::uint64_t> counts(batch, 0);
+    const int threads = resolved_num_threads();
+#ifndef _OPENMP
+    (void)threads;
+#endif
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static) num_threads(threads)
+#else
     #pragma omp parallel for schedule(static)
+#endif
     for (std::size_t i = 0; i < batch; ++i) {
         const std::uint64_t* digest = base + i * stride_elems;
         std::vector<std::size_t> tmp;
@@ -214,7 +256,11 @@ void LSH::query_candidates_batch(const std::uint64_t* base,
     flat_out.resize(total);
 
     // Pass 2: fill flat_out in parallel
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static) num_threads(threads)
+#else
     #pragma omp parallel for schedule(static)
+#endif
     for (std::size_t i = 0; i < batch; ++i) {
         const std::uint64_t* digest = base + i * stride_elems;
         std::vector<std::size_t> tmp;
@@ -247,10 +293,18 @@ void LSH::query_candidates_batch(const std::uint64_t* const* rows,
     }
     indptr_out.clear(); indptr_out.resize(batch + 1);
     flat_out.clear();
+    const int threads = resolved_num_threads();
+#ifndef _OPENMP
+    (void)threads;
+#endif
 
     // Pass 1: compute per-row counts in parallel
     std::vector<std::uint64_t> counts(batch, 0);
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static) num_threads(threads)
+#else
     #pragma omp parallel for schedule(static)
+#endif
     for (std::size_t i = 0; i < batch; ++i) {
         const std::uint64_t* digest = rows[i];
         std::vector<std::size_t> tmp;
@@ -277,7 +331,11 @@ void LSH::query_candidates_batch(const std::uint64_t* const* rows,
     flat_out.resize(total);
 
     // Pass 2: fill flat_out in parallel
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static) num_threads(threads)
+#else
     #pragma omp parallel for schedule(static)
+#endif
     for (std::size_t i = 0; i < batch; ++i) {
         const std::uint64_t* digest = rows[i];
         std::vector<std::size_t> tmp;

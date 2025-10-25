@@ -21,6 +21,10 @@
 #include <stdexcept>
 #include <vector>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 // Require ankerl::unordered_dense
 #include <ankerl/unordered_dense.h>
 
@@ -36,7 +40,8 @@ public:
     explicit LSH(std::size_t num_perm,
                  std::size_t num_bands,
                  BandHashKind hash_kind = BandHashKind::splitmix64,
-                 std::uint64_t seed = 0x9e3779b97f4a7c15ULL);
+                 std::uint64_t seed = 0x9e3779b97f4a7c15ULL,
+                 int num_threads = 0);
 
     // Reserve internal capacities for an expected number of items (rows).
     void reserve(std::size_t expected_num_items);
@@ -77,6 +82,8 @@ public:
     inline std::size_t num_perm() const noexcept { return num_perm_; }
     inline std::size_t num_bands() const noexcept { return num_bands_; }
     inline std::size_t band_size() const noexcept { return band_size_; }
+    inline int num_threads() const noexcept { return num_threads_; }
+    void set_num_threads(int num_threads);
     // threshold removed; kept in constructor signature for API compatibility
 
 private:
@@ -99,6 +106,7 @@ private:
     // Scratch buffer reused across queries to avoid per-call allocations.
     // Mutable to allow filling in const query methods. Single-thread only.
     mutable std::vector<std::size_t> last_candidates_;
+    int num_threads_;
 
     static inline std::uint64_t mix64(std::uint64_t x) {
         x ^= x >> 33;
@@ -123,7 +131,16 @@ private:
         }
         return acc;
     }
+
+    inline int resolved_num_threads() const noexcept {
+#ifdef _OPENMP
+        if (num_threads_ > 0) {
+            return num_threads_;
+        }
+        return omp_get_max_threads();
+#else
+        return 1;
+#endif
+    }
 };
-
-
 
