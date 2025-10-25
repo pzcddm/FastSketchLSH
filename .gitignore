@@ -8,3 +8,5 @@ FastSketchLSH.cp311*
 .eggs/
 .cursorignore
 *.cpython-*
+data/
+comparison/processed_ds/
