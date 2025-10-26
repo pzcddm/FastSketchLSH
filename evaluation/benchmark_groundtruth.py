@@ -262,7 +262,6 @@ def run_evaluation_benchmark(args):
     print("Loading dataset...")
     # Load dataset
     ds = load_dataset("pinecone/core-2020-05-10-deduplication", split="train")
-
     # Sample data
     if args.ratio < 1.0:
         total_size = len(ds)
