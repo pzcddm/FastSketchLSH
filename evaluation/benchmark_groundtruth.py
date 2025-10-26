@@ -1,12 +1,15 @@
 import os
+import sys
+# To import FastSketchLSH
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import pickle
 import time
 import argparse
 import random
-import sys
 from collections import defaultdict
 from typing import List, Set, Dict, Any, Tuple
 
+import numpy as np
 import pandas as pd
 from datasets import load_dataset, Features, Sequence, Value
 from tqdm import tqdm
@@ -15,10 +18,7 @@ from tqdm import tqdm
 from datasketch import MinHash, MinHashLSH
 from datasketch.lsh import _optimal_param
 from rensa import RMinHash, RMinHashLSH
-
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+from FastSketchLSH import FastSimilaritySketch, LSH
 
 
 class Timer:
@@ -293,8 +293,8 @@ def run_evaluation_benchmark(args):
         for x in truth
     }
 
-    # Compute LSH parameters
-    bands, rows = _optimal_param(args.lsh_threshold, args.num_perm, 0.5, 0.5)
+    bands = args.bands
+    rows = args.rows
     num_perm = bands * rows
 
     print(f"\nLSH Parameters:")
@@ -348,7 +348,7 @@ def run_evaluation_benchmark(args):
     print("\nRunning Rensa LSH...")
     with timer("Rensa"):
         rs_res = run_rensa_lsh_with_candidates(
-            token_sets, args.lsh_threshold, num_perm, bands, args.seed
+            token_sets, args.lsh_threshold, num_perm, bands
         )
 
     rs_uf = convert_results_to_unionfind(
@@ -474,24 +474,27 @@ def run_fastsketch_lsh_with_candidates(
         random_seed: int = 42
 ) -> Dict[str, Any]:
     """Run FastSketch LSH and return candidate sets."""
-    from prototype.src.fast_sketch_lsh import FastSketchLSH
     n = len(token_sets)
 
-    # Phase 1: Insert
+    # Phase 1: Sketching
     start1 = time.perf_counter()
-    lsh = FastSketchLSH(threshold=threshold, sketch_size=num_perm,
-                        bands=bands, random_seed=random_seed)
-    for idx, tokens in enumerate(token_sets):
-        lsh.insert(idx, tokens)
+    token_sets_bytes = [[tok.encode('utf-8') for tok in tokens] for tokens in token_sets]
+    sketcher = FastSimilaritySketch(sketch_size=num_perm, seed=random_seed)
+    minhashes = sketcher.sketch_batch(token_sets_bytes, num_threads=os.cpu_count() or 1)
     phase1_time = time.perf_counter() - start1
 
-    # Phase 2: Query
+    # Phase 2: LSH Indexing
     start2 = time.perf_counter()
-    candidate_sets = [set(lsh.query(tokens)) for tokens in token_sets]
+    lsh = LSH(num_perm=num_perm, num_bands=bands)
+    lsh.build_from_batch(minhashes)
     phase2_time = time.perf_counter() - start2
 
-    # Phase 3: Deduplication
+    # Phase 3: Querying and Deduplication
     start3 = time.perf_counter()
+    candidate_sets_list = lsh.batch_query(minhashes)
+    candidate_sets = [set(candidates) for candidates in candidate_sets_list]
+
+    # Deduplication process
     to_remove = set()
     for i in range(n):
         candidates = candidate_sets[i]
@@ -520,7 +523,6 @@ def run_rensa_lsh_with_candidates(
         threshold: float,
         num_perm: int,
         bands: int,
-        random_seed: int = 42
 ) -> Dict[str, Any]:
     """Run Rensa LSH and return candidate sets."""
     n = len(token_sets)
@@ -529,7 +531,7 @@ def run_rensa_lsh_with_candidates(
     start1 = time.perf_counter()
     minhashes = []
     for tokens in token_sets:
-        m = RMinHash(num_perm=num_perm, seed=random_seed)
+        m = RMinHash(num_perm=num_perm, seed=42)
         m.update(tokens)
         minhashes.append(m)
     phase1_time = time.perf_counter() - start1
