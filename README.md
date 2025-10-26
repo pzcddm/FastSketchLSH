@@ -59,9 +59,23 @@ Example utilities and plots:
 - `prototype/simulation/util.py`: set generation and Jaccard utilities used everywhere
 - `prototype/simulation/figures/`: example figures comparing distributions
 
-## Deduplication at scale
+## End-to-end Deduplication Benchmark
 
-The end goal is to accelerate deduplication over very large datasets. The fast sketch construction plus LSH pipelines make it practical to filter duplicate items.
+The `evaluation/` directory contains scripts for benchmarking the entire deduplication pipeline (sketching, LSH, and evaluation) on datasets with ground truth labels. The main script, `benchmark_groundtruth.py`, compares `FastSketchLSH` against `datasketch` and `rensa` on the `pinecone/core-2020-05-10-deduplication` dataset from Hugging Face.
+
+### Usage Example
+
+To run the benchmark with default parameters:
+```bash
+python3 evaluation/benchmark_groundtruth.py
+```
+
+You can customize the run with different parameters. For example, to use a different LSH threshold and use 50% of the dataset:
+```bash
+python3 evaluation/benchmark_groundtruth.py --lsh_threshold 0.9 --ratio 0.5
+```
+
+The script outputs performance metrics like precision, recall, accuracy, and runtime for each method, and provides a side-by-side comparison.
 
 ## Project layout
 
@@ -75,6 +89,16 @@ The end goal is to accelerate deduplication over very large datasets. The fast s
 ## Benchmark results
 <details>
 <summary>pinecone/core-2020-05-10-deduplication</summary>
+
+The following table shows the end-to-end deduplication performance on the pinecone/core-2020-05-10-deduplication dataset, including precision, recall, and accuracy metrics.
+
+| Algorithm   |   Precision (Duplicates) |   Recall (Duplicates) |   Precision (Non Duplicates) |   Recall (Non Duplicates) |   Macro F1 score |   Accuracy | Time   |
+|:------------|-------------------------:|----------------------:|-----------------------------:|--------------------------:|-----------------:|-----------:|:-------|
+| Datasketch  |                   0.4846 |                0.0467 |                       0.5301 |                    0.9558 |           0.5073 |     0.528  | 22.63s |
+| FastSketch  |                   0.4858 |                0.0474 |                       0.5301 |                    0.9554 |           0.508  |     0.5281 | 0.15s  |
+| Rensa       |                   0.4785 |                0.0475 |                       0.5305 |                    0.9542 |           0.5045 |     0.5281 | 0.28s  |
+
+The table below focuses on the performance of different pipeline stages (sketching, LSH build, and query).
 
 | Algorithm | Sketch Time (s) | Build Time (s) | Query Time (s) | Total Time (s) |
 |-----------|-------------|------------|------------|------------|
