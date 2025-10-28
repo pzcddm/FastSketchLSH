@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import os
+import pickle
 import random
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
@@ -80,7 +80,7 @@ class DatasetPreprocessor:
         if self.processed_dir is None:
             return None
         safe_dataset = self.dataset_name.replace("/", "__")
-        filename = f"{safe_dataset}__{self.split}__ng{self.ngram_size}.json"
+        filename = f"{safe_dataset}__{self.split}__ng{self.ngram_size}.pkl"
         return self.processed_dir / filename
 
     def load_and_tokenize(self) -> PreprocessResult:
@@ -92,17 +92,16 @@ class DatasetPreprocessor:
         processed_path = self._processed_path()
         if processed_path is not None and processed_path.exists():
             cache_start = time.perf_counter()
-            with processed_path.open("r", encoding="utf-8") as fh:
-                cached = json.load(fh)
+            with processed_path.open("rb") as fh:
+                token_sets = pickle.load(fh)
             cache_time = time.perf_counter() - cache_start
+            if not isinstance(token_sets, list):
+                raise RuntimeError(f"Cached file missing token sets: {processed_path}")
             print(f"Loaded preprocessed dataset from {processed_path}")
-            if "token_sets" not in cached:
-                raise RuntimeError(f"Cached file missing token_sets: {processed_path}")
-            num_records = cached.get("num_records", len(cached["token_sets"]))
             return PreprocessResult(
-                texts=[""] * num_records,
-                token_sets=cached["token_sets"],
-                elapsed_seconds=cached.get("elapsed_seconds", cache_time),
+                texts=[""] * len(token_sets),
+                token_sets=token_sets,
+                elapsed_seconds=cache_time,
             )
 
         load_kwargs = {}
@@ -118,16 +117,8 @@ class DatasetPreprocessor:
         elapsed = time.perf_counter() - start
 
         if processed_path is not None:
-            with processed_path.open("w", encoding="utf-8") as fh:
-                json.dump(
-                    {
-                        "token_sets": token_sets,
-                        "elapsed_seconds": elapsed,
-                        "num_records": len(token_sets),
-                        "ngram_size": self.ngram_size,
-                    },
-                    fh,
-                )
+            with processed_path.open("wb") as fh:
+                pickle.dump(token_sets, fh, protocol=pickle.HIGHEST_PROTOCOL)
             print(f"Saved preprocessed dataset to {processed_path}")
 
         return PreprocessResult(texts=texts, token_sets=token_sets, elapsed_seconds=elapsed)
