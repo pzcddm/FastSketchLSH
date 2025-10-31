@@ -156,6 +156,10 @@ public:
                                  double* prehash_ms,
                                  double* phase1_ms,
                                  double* phase2_ms);
+    // Zero-copy UTF-8 view sketcher (expects pointers that remain valid for the call duration)
+    std::vector<uint64_t> sketch_utf8_views(const uint8_t* const* ptrs,
+                                            const size_t* lengths,
+                                            size_t n);
 
     // Batch APIs: compute sketches for a batch of inputs.
     // Each batch element corresponds to one set. num_threads=0 uses all available threads when OpenMP is enabled.

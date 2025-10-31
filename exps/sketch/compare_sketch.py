@@ -74,6 +74,22 @@ class SketchComparison:
         end_time = time.perf_counter()
         return sketch, (end_time - start_time)
 
+    def time_sketch_generation_1(self, sketcher, items: Iterable) -> Tuple[List[int], float]:
+        """
+        Measure time to generate a sketch and return both sketch and duration.
+
+        Args:
+            sketcher: Sketch algorithm instance
+            items: Iterable passed directly to sketcher.sketch (preprocessed as needed)
+
+        Returns:
+            (sketch, elapsed_seconds)
+        """
+        start_time = time.perf_counter()
+        sketch = sketcher.sketch_utf8_fast(items)
+        end_time = time.perf_counter()
+        return sketch, (end_time - start_time)
+
     def run_single_test(self, k: int, n: int, num_trials: int = 50) -> dict:
         """
         Run a single comparison test for given k and n values.
@@ -118,10 +134,11 @@ class SketchComparison:
 
             # sketch_a, time_a = self.time_sketch_generation(fast_sketcher, int_a)
             # sketch_b, time_b = self.time_sketch_generation(fast_sketcher, int_b)
-            sketch_a, time_a = self.time_sketch_generation(fast_sketcher, encoded_a)
-            sketch_b, time_b = self.time_sketch_generation(fast_sketcher, encoded_b)
-            # sketch_a, time_a = self.time_sketch_generation(fast_sketcher, str_a)
-            # sketch_b, time_b = self.time_sketch_generation(fast_sketcher, str_b)
+            # sketch_a, time_a = self.time_sketch_generation(fast_sketcher, encoded_a)
+            # sketch_b, time_b = self.time_sketch_generation(fast_sketcher, encoded_b)
+            sketch_a, time_a = self.time_sketch_generation_1(fast_sketcher, str_a)
+            sketch_b, time_b = self.time_sketch_generation_1(fast_sketcher, str_b)
+            
             fast_total_time = time_a + time_b
             fast_estimated = estimate_jaccard(sketch_a, sketch_b)
             fast_error = abs(true_jaccard - fast_estimated)
@@ -255,7 +272,7 @@ if __name__ == '__main__':
     # Run the comparison
     comparison = SketchComparison()
     comparison.run_full_comparison()
-    comparison.save_results_to_csv()
+    # comparison.save_results_to_csv()
 
     print("Comparison complete!")
     print(f"Total tests run: {len(comparison.results)}")

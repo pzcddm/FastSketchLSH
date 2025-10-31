@@ -171,6 +171,45 @@ PYBIND11_MODULE(FastSketchLSH, m) {
       }, py::arg("items"),
         "Compute FastSimilaritySketch for list of strings/bytes (optimized for bytes)")
 
+      .def("sketch_utf8_fast", [](FastSimilaritySketch& self, py::list items) {
+          if (items.size() == 0) {
+              throw py::value_error("List cannot be empty");
+          }
+          const Py_ssize_t n = static_cast<Py_ssize_t>(items.size());
+          std::vector<const uint8_t*> ptrs(static_cast<size_t>(n));
+          std::vector<size_t> lengths(static_cast<size_t>(n));
+          std::vector<py::bytes> utf8_cache;
+          utf8_cache.reserve(static_cast<size_t>(n));
+          for (Py_ssize_t i = 0; i < n; ++i) {
+              py::handle item = items[i];
+              PyObject* obj = item.ptr();
+              if (!PyUnicode_Check(obj)) {
+                  throw py::value_error("sketch_utf8_fast expects all items to be str");
+              }
+              if (PyUnicode_READY(obj) == -1) {
+                  throw py::error_already_set();
+              }
+              const size_t idx = static_cast<size_t>(i);
+              if (PyUnicode_IS_ASCII(obj)) {
+                  Py_ssize_t size = PyUnicode_GET_LENGTH(obj);
+                  ptrs[idx] = reinterpret_cast<const uint8_t*>(PyUnicode_1BYTE_DATA(obj));
+                  lengths[idx] = static_cast<size_t>(size);
+              } else {
+                  PyObject* utf8_obj = PyUnicode_AsUTF8String(obj);
+                  if (!utf8_obj) {
+                      throw py::error_already_set();
+                  }
+                  utf8_cache.emplace_back(py::reinterpret_steal<py::bytes>(utf8_obj));
+                  Py_ssize_t size = PyBytes_GET_SIZE(utf8_cache.back().ptr());
+                  ptrs[idx] = reinterpret_cast<const uint8_t*>(PyBytes_AS_STRING(utf8_cache.back().ptr()));
+                  lengths[idx] = static_cast<size_t>(size);
+              }
+          }
+          py::gil_scoped_release release;
+          return self.sketch_utf8_views(ptrs.data(), lengths.data(), static_cast<size_t>(n));
+      }, py::arg("items"),
+        "Experimental fast path that sketches list[str] via zero-copy UTF-8 views (ASCII strings stay zero-copy).")
+
       // Fallback iterable sketch method (backward compatibility)
       .def("sketch", [](FastSimilaritySketch& self, py::iterable items) {
           if (items.is_none() || py::len(items) == 0) {
