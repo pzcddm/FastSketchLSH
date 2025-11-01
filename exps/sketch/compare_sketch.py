@@ -252,9 +252,10 @@ class SketchComparison:
         Args:
             filename: Name of the CSV file to create
         """
-        # Always save to the records directory in the project root
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-        filepath = os.path.join(project_root, 'records', filename)
+        # Always save to the records directory alongside this script
+        records_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'records'))
+        os.makedirs(records_dir, exist_ok=True)
+        filepath = os.path.join(records_dir, filename)
         fieldnames = [
             'k', 'n', 'true_jaccard',
             'fast_avg_error', 'datasketch_avg_error', 'cmins_avg_error', 'rmins_avg_error',
@@ -272,7 +273,7 @@ if __name__ == '__main__':
     # Run the comparison
     comparison = SketchComparison()
     comparison.run_full_comparison()
-    # comparison.save_results_to_csv()
+    comparison.save_results_to_csv()
 
     print("Comparison complete!")
     print(f"Total tests run: {len(comparison.results)}")
