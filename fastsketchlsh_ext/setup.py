@@ -217,7 +217,7 @@ if pybind11_available:
 
 setup(
     name='FastSketchLSH',
-    version='0.3.2',
+    version='0.3.3',
     description='High-performance FastSketch with SIMD acceleration to deduplicate large-scale data',
     ext_modules=ext_modules,
     cmdclass={'build_ext': BuildExt},

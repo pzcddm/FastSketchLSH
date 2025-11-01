@@ -5,8 +5,8 @@ This file compares the performance of FastSimilaritySketch, DatasketchMinHashSke
 and CMinHashSketch algorithms in terms of estimation accuracy and execution speed across varying parameters.
 
 The test varies:
-- k values: [16, 32, 64, 128, 256, 512]
-- Set sizes (n): [100, 1250, 2500, 5000, 10000, 20000]
+- k values: [64, 128, 256]
+- Set sizes (n): [100, 400, 1600, 6400, 25600]
 
 Results are saved to CSV files in the records/ directory for analysis.
 
@@ -35,19 +35,14 @@ from prototype.src.rmins_sketch import RMinHashSketch
 from prototype.simulation.util import estimate_jaccard, actual_jaccard, generate_interval_sets_with_jaccard
 
 
- 
-
-
 class SketchComparison:
     """
     Compares FastSimilaritySketch, DatasketchMinHashSketch, and CMinHashSketch performance across different parameters.
     """
 
     def __init__(self):
-        # self.k_values = [32, 64, 128, 256, 512]
-        # self.n_values = [100, 2500, 5000, 10000, 20000]
-        self.k_values = [ 128, 256]
-        self.n_values = [30, 50, 100, 300, 1000, 5000, 10000]
+        self.k_values = [64, 128, 256]
+        self.n_values = [100, 400, 1600, 6400, 25600]
         self.results = []
 
     def generate_test_sets(self, n: int, overlap_ratio: float = 0.5, trial: int = 0) -> Tuple[set, set]:
@@ -71,22 +66,6 @@ class SketchComparison:
         """
         start_time = time.perf_counter()
         sketch = sketcher.sketch(items)
-        end_time = time.perf_counter()
-        return sketch, (end_time - start_time)
-
-    def time_sketch_generation_1(self, sketcher, items: Iterable) -> Tuple[List[int], float]:
-        """
-        Measure time to generate a sketch and return both sketch and duration.
-
-        Args:
-            sketcher: Sketch algorithm instance
-            items: Iterable passed directly to sketcher.sketch (preprocessed as needed)
-
-        Returns:
-            (sketch, elapsed_seconds)
-        """
-        start_time = time.perf_counter()
-        sketch = sketcher.sketch_utf8_fast(items)
         end_time = time.perf_counter()
         return sketch, (end_time - start_time)
 
@@ -126,18 +105,13 @@ class SketchComparison:
             str_a = [str(x) for x in int_a]
             str_b = [str(x) for x in int_b]
 
-            encoded_a = [x.encode('utf-8') for x in str_a]
-            encoded_b = [x.encode('utf-8') for x in str_b]
-            
             # Test FastSimilaritySketch (SIMD expects integers)
             fast_sketcher = FastSimilaritySketch(sketch_size=k)
 
             # sketch_a, time_a = self.time_sketch_generation(fast_sketcher, int_a)
             # sketch_b, time_b = self.time_sketch_generation(fast_sketcher, int_b)
-            # sketch_a, time_a = self.time_sketch_generation(fast_sketcher, encoded_a)
-            # sketch_b, time_b = self.time_sketch_generation(fast_sketcher, encoded_b)
-            sketch_a, time_a = self.time_sketch_generation_1(fast_sketcher, str_a)
-            sketch_b, time_b = self.time_sketch_generation_1(fast_sketcher, str_b)
+            sketch_a, time_a = self.time_sketch_generation(fast_sketcher, str_a)
+            sketch_b, time_b = self.time_sketch_generation(fast_sketcher, str_b)
             
             fast_total_time = time_a + time_b
             fast_estimated = estimate_jaccard(sketch_a, sketch_b)
@@ -207,9 +181,9 @@ class SketchComparison:
             'datasketch_avg_time': avg_datasketch_time,
             'cmins_avg_time': avg_cmins_time,
             'rmins_avg_time': avg_rmins_time,
-            'fast_speedup_vs_datasketch': avg_fast_time / avg_datasketch_time if avg_datasketch_time > 0 else 0,
-            'fast_speedup_vs_cmins': avg_fast_time / avg_cmins_time if avg_cmins_time > 0 else 0,
-            'fast_speedup_vs_rmins': avg_fast_time / avg_rmins_time if avg_rmins_time > 0 else 0,
+            'fast_speedup_vs_datasketch': avg_datasketch_time / avg_fast_time if avg_fast_time > 0 else 0,
+            'fast_speedup_vs_cmins': avg_cmins_time / avg_fast_time if avg_fast_time > 0 else 0,
+            'fast_speedup_vs_rmins': avg_rmins_time / avg_fast_time if avg_fast_time > 0 else 0,
         }
 
     def run_full_comparison(self) -> None:
@@ -241,9 +215,9 @@ class SketchComparison:
                 print(f"  Datasketch time: {result['datasketch_avg_time']:.6f}s")
                 print(f"  CMins time: {result['cmins_avg_time']:.6f}s")
                 print(f"  RMin time: {result['rmins_avg_time']:.6f}s")
-                print(f"  Speedup ratio (Fast/Datasketch): {result['fast_speedup_vs_datasketch']:.2f}")
-                print(f"  Speedup ratio (Fast/CMins): {result['fast_speedup_vs_cmins']:.2f}")
-                print(f"  Speedup ratio (Fast/RMin): {result['fast_speedup_vs_rmins']:.2f}")
+                print(f"  Speedup (FastSketch vs Datasketch): {result['fast_speedup_vs_datasketch']:.2f}x")
+                print(f"  Speedup (FastSketch vs CMins): {result['fast_speedup_vs_cmins']:.2f}x")
+                print(f"  Speedup (FastSketch vs RMin): {result['fast_speedup_vs_rmins']:.2f}x")
                 print()
 
     def save_results_to_csv(self, filename: str = "sketch_comparison_results.csv") -> None:

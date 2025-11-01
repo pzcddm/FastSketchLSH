@@ -50,17 +50,6 @@ namespace py = pybind11;
 
 // ===================== Optimized Helper Functions =====================
 
-// Fast path for NumPy arrays - zero copy access
-template<typename T>
-inline std::vector<T> numpy_to_vector_zerocopy(py::array_t<T> arr) {
-    py::buffer_info buf = arr.request();
-    if (buf.ndim != 1) {
-        throw py::value_error("NumPy array must be 1-dimensional");
-    }
-    T* ptr = static_cast<T*>(buf.ptr);
-    return std::vector<T>(ptr, ptr + buf.size);
-}
-
 // Fast path for bytes objects - zero copy access
 inline std::vector<std::string> bytes_list_to_vector_zerocopy(py::list items) {
     std::vector<std::string> result;
@@ -107,26 +96,39 @@ PYBIND11_MODULE(FastSketchLSH, m) {
             "  sketch_size: Number of sketch\n"
             "  seed: Random seed (0 to 0xFFFFFFFF, default=42)")
 
-      // Optimized NumPy array sketch method for uint32 (zero-copy, GIL release)
-      .def("sketch", [](FastSimilaritySketch& self, py::array_t<uint32_t> arr) {
-          if (arr.size() == 0) {
+      // NumPy array sketch method for uint32 (true zero-copy, GIL release)
+      .def("sketch", [](FastSimilaritySketch& self,
+                        py::array_t<uint32_t, py::array::c_style | py::array::forcecast> arr) {
+          py::buffer_info buf = arr.request();
+          if (buf.ndim != 1) {
+              throw py::value_error("NumPy array must be 1-dimensional");
+          }
+          if (buf.size == 0) {
               throw py::value_error("Array cannot be empty");
           }
-          std::vector<uint32_t> int_items = numpy_to_vector_zerocopy<uint32_t>(arr);
+          const auto* ptr = static_cast<const uint32_t*>(buf.ptr);
+          const size_t n = static_cast<size_t>(buf.size);
           py::gil_scoped_release release;
-          return self.sketch(int_items);
+          return self.sketch(ptr, n);
       }, py::arg("items"),
-        "Compute FastSimilaritySketch for NumPy uint32 array (optimized zero-copy)")
+        "Compute FastSimilaritySketch for NumPy uint32 array (zero-copy fast path)")
 
-      // Optimized NumPy array sketch method for int32 (zero-copy, GIL release)
-      .def("sketch", [](FastSimilaritySketch& self, py::array_t<int32_t> arr) {
-          if (arr.size() == 0) {
+      // NumPy array sketch method for int32 (validates sign, converts to uint32)
+      .def("sketch", [](FastSimilaritySketch& self,
+                        py::array_t<int32_t, py::array::c_style | py::array::forcecast> arr) {
+          py::buffer_info buf = arr.request();
+          if (buf.ndim != 1) {
+              throw py::value_error("NumPy array must be 1-dimensional");
+          }
+          if (buf.size == 0) {
               throw py::value_error("Array cannot be empty");
           }
-          auto int32_items = numpy_to_vector_zerocopy<int32_t>(arr);
+          const auto* src = static_cast<const int32_t*>(buf.ptr);
+          const size_t n = static_cast<size_t>(buf.size);
           std::vector<uint32_t> int_items;
-          int_items.reserve(int32_items.size());
-          for (int32_t val : int32_items) {
+          int_items.reserve(n);
+          for (size_t i = 0; i < n; ++i) {
+              int32_t val = src[i];
               if (val < 0) {
                   throw py::value_error("FastSimilaritySketch requires non-negative integers");
               }
@@ -135,41 +137,123 @@ PYBIND11_MODULE(FastSketchLSH, m) {
           py::gil_scoped_release release;
           return self.sketch(int_items);
       }, py::arg("items"),
-        "Compute FastSimilaritySketch for NumPy int32 array (optimized zero-copy, converted to uint32)")
+        "Compute FastSimilaritySketch for NumPy int32 array (validated and converted to uint32)")
 
-      // Optimized list sketch method (supports both bytes and strings)
+      // path for Python tuple of integers
+      .def("sketch", [](FastSimilaritySketch& self, py::tuple items) {
+          const Py_ssize_t n = PyTuple_GET_SIZE(items.ptr());
+          if (n == 0) {
+              throw py::value_error("Tuple cannot be empty");
+          }
+          
+          // Check if first element is an integer
+          PyObject* first = PyTuple_GET_ITEM(items.ptr(), 0);
+          if (!PyLong_Check(first)) {
+              throw py::value_error("For tuples, only integer elements are supported in fast path");
+          }
+          
+          // Direct array allocation
+          std::unique_ptr<uint32_t[]> int_items(new uint32_t[static_cast<size_t>(n)]);
+          PyObject* tuple_ptr = items.ptr();
+          
+          // Fast path using PyTuple_GET_ITEM
+          for (Py_ssize_t i = 0; i < n; ++i) {
+              PyObject* item = PyTuple_GET_ITEM(tuple_ptr, i);
+              long value = PyLong_AsLong(item);
+              int_items[static_cast<size_t>(i)] = static_cast<uint32_t>(value);
+          }
+          
+          // Batch error check
+          if (PyErr_Occurred()) {
+              PyErr_Clear();
+              throw py::value_error("All items must be non-negative integers fitting in uint32");
+          }
+          
+          const uint32_t* ptr = int_items.get();
+          py::gil_scoped_release release;
+          return self.sketch(ptr, static_cast<size_t>(n));
+      }, py::arg("items"),
+        "Fast path for Python tuple of integers")
+
+      // Optimized list sketch method (supports strings, bytes, and Python ints)
       .def("sketch", [](FastSimilaritySketch& self, py::list items) {
           if (items.size() == 0) {
               throw py::value_error("List cannot be empty");
           }
           
-          // Check if first item is bytes for fast path
-          auto first_item = items[0];
-          if (py::isinstance<py::bytes>(first_item)) {
+          // Check first item type to dispatch to appropriate fast path
+          // Use direct Python C API for minimal overhead
+          PyObject* first_item = PyList_GET_ITEM(items.ptr(), 0);
+          
+          // Check strings FIRST (most common for text workloads)
+          if (PyUnicode_Check(first_item)) {
+              // Zero-copy fast path for string lists using UTF-8 views
+              const Py_ssize_t n = static_cast<Py_ssize_t>(items.size());
+              std::vector<const uint8_t*> ptrs(static_cast<size_t>(n));
+              std::vector<size_t> lengths(static_cast<size_t>(n));
+              std::vector<py::bytes> utf8_cache;
+              utf8_cache.reserve(static_cast<size_t>(n));
+              PyObject* list_ptr = items.ptr();
+              
+              for (Py_ssize_t i = 0; i < n; ++i) {
+                  PyObject* obj = PyList_GET_ITEM(list_ptr, i);
+                  
+                  // Note: We assume homogeneous lists (first item check is sufficient)
+                  // PyUnicode_READY is required by Python C API before accessing internals
+                  if (PyUnicode_READY(obj) == -1) {
+                      throw py::error_already_set();
+                  }
+                  
+                  const size_t idx = static_cast<size_t>(i);
+                  // Zero-copy for ASCII strings
+                  if (PyUnicode_IS_ASCII(obj)) {
+                      Py_ssize_t size = PyUnicode_GET_LENGTH(obj);
+                      ptrs[idx] = reinterpret_cast<const uint8_t*>(PyUnicode_1BYTE_DATA(obj));
+                      lengths[idx] = static_cast<size_t>(size);
+                  } else {
+                      // Convert non-ASCII to UTF-8 and cache
+                      PyObject* utf8_obj = PyUnicode_AsUTF8String(obj);
+                      if (!utf8_obj) {
+                          throw py::error_already_set();
+                      }
+                      utf8_cache.emplace_back(py::reinterpret_steal<py::bytes>(utf8_obj));
+                      Py_ssize_t size = PyBytes_GET_SIZE(utf8_cache.back().ptr());
+                      ptrs[idx] = reinterpret_cast<const uint8_t*>(PyBytes_AS_STRING(utf8_cache.back().ptr()));
+                      lengths[idx] = static_cast<size_t>(size);
+                  }
+              }
+              
+              py::gil_scoped_release release;
+              return self.sketch_utf8_views(ptrs.data(), lengths.data(), static_cast<size_t>(n));
+          } else if (PyBytes_Check(first_item)) {
               // Fast path for bytes objects
               std::vector<std::string> byte_items = bytes_list_to_vector_zerocopy(items);
               py::gil_scoped_release release;
               return self.sketch(byte_items);
-          } else if (py::isinstance<py::str>(first_item)) {
-              // Handle string lists (backward compatibility)
-              std::vector<std::string> str_items;
-              str_items.reserve(items.size());
-              for (auto item : items) {
-                  if (py::isinstance<py::str>(item)) {
-                      str_items.push_back(py::cast<std::string>(item));
-                  } else if (py::isinstance<py::bytes>(item)) {
-                      str_items.push_back(py::cast<std::string>(item));
-                  } else {
-                      throw py::value_error("All items must be strings or bytes");
-                  }
+          } else if (PyLong_Check(first_item)) {
+              const Py_ssize_t n = static_cast<Py_ssize_t>(items.size());
+              std::unique_ptr<uint32_t[]> int_items(new uint32_t[static_cast<size_t>(n)]);
+              PyObject* list_ptr = items.ptr();
+              
+              for (Py_ssize_t i = 0; i < n; ++i) {
+                  PyObject* item = PyList_GET_ITEM(list_ptr, i);
+                  long value = PyLong_AsLong(item);
+                  int_items[static_cast<size_t>(i)] = static_cast<uint32_t>(value);
               }
+              
+              if (PyErr_Occurred()) {
+                  PyErr_Clear();
+                  throw py::value_error("All items must be non-negative integers fitting in uint32");
+              }
+              
+              const uint32_t* ptr = int_items.get();
               py::gil_scoped_release release;
-              return self.sketch(str_items);
+              return self.sketch(ptr, static_cast<size_t>(n));
           } else {
               throw py::value_error("Use sketch(numpy_array) for integers or ensure all items are strings/bytes for this overload");
           }
       }, py::arg("items"),
-        "Compute FastSimilaritySketch for list of strings/bytes (optimized for bytes)")
+        "Compute FastSimilaritySketch for list of strings/bytes/integers (optimized paths)")
 
       .def("sketch_utf8_fast", [](FastSimilaritySketch& self, py::list items) {
           if (items.size() == 0) {
@@ -210,49 +294,49 @@ PYBIND11_MODULE(FastSketchLSH, m) {
       }, py::arg("items"),
         "Experimental fast path that sketches list[str] via zero-copy UTF-8 views (ASCII strings stay zero-copy).")
 
-      // Fallback iterable sketch method (backward compatibility)
-      .def("sketch", [](FastSimilaritySketch& self, py::iterable items) {
-          if (items.is_none() || py::len(items) == 0) {
-              throw py::value_error("Items cannot be empty");
-          }
-          // Inspect the first element to decide path
-          std::vector<py::object> objs; objs.reserve(py::len(items));
-          for (auto item : items) { objs.emplace_back(py::reinterpret_borrow<py::object>(item)); }
-          const py::object& first = objs.front();
-          const bool first_is_bytes_like = py::isinstance<py::bytes>(first)
-                                        || py::isinstance<py::str>(first)
-                                        || py::hasattr(first, "__bytes__");
-          if (first_is_bytes_like) {
-              std::vector<std::string> byte_items; byte_items.reserve(objs.size());
-              for (const auto& obj : objs) {
-                  if (py::isinstance<py::bytes>(obj)) {
-                      byte_items.emplace_back(py::cast<std::string>(obj));
-                  } else if (py::isinstance<py::str>(obj)) {
-                      py::bytes b = py::reinterpret_borrow<py::bytes>(py::str(obj).attr("encode")("utf-8"));
-                      byte_items.emplace_back(py::cast<std::string>(b));
-                  } else if (py::hasattr(obj, "__bytes__")) {
-                      py::bytes b = py::reinterpret_borrow<py::bytes>(obj.attr("__bytes__")());
-                      byte_items.emplace_back(py::cast<std::string>(b));
-                  } else {
-                      throw py::value_error("All items must be bytes-like or str when the first is string-like.");
-                  }
-              }
-              py::gil_scoped_release release;
-              return self.sketch(byte_items);
-          } else {
-              std::vector<uint32_t> int_items; int_items.reserve(objs.size());
-              for (const auto& obj : objs) {
-                  try {
-                      int_items.push_back(py::cast<uint32_t>(obj));
-                  } catch (const py::cast_error&) {
-                      throw py::value_error("All items must be integers when the first is not string-like.");
-                  }
-              }
-              py::gil_scoped_release release;
-              return self.sketch(int_items);
-          }
-      }, py::arg("items"),
-        "Compute sketch for str/bytes or integer lists using FastSimilaritySketch")
+    //   // Fallback iterable sketch method (backward compatibility)
+    //   .def("sketch", [](FastSimilaritySketch& self, py::iterable items) {
+    //       if (items.is_none() || py::len(items) == 0) {
+    //           throw py::value_error("Items cannot be empty");
+    //       }
+    //       // Inspect the first element to decide path
+    //       std::vector<py::object> objs; objs.reserve(py::len(items));
+    //       for (auto item : items) { objs.emplace_back(py::reinterpret_borrow<py::object>(item)); }
+    //       const py::object& first = objs.front();
+    //       const bool first_is_bytes_like = py::isinstance<py::bytes>(first)
+    //                                     || py::isinstance<py::str>(first)
+    //                                     || py::hasattr(first, "__bytes__");
+    //       if (first_is_bytes_like) {
+    //           std::vector<std::string> byte_items; byte_items.reserve(objs.size());
+    //           for (const auto& obj : objs) {
+    //               if (py::isinstance<py::bytes>(obj)) {
+    //                   byte_items.emplace_back(py::cast<std::string>(obj));
+    //               } else if (py::isinstance<py::str>(obj)) {
+    //                   py::bytes b = py::reinterpret_borrow<py::bytes>(py::str(obj).attr("encode")("utf-8"));
+    //                   byte_items.emplace_back(py::cast<std::string>(b));
+    //               } else if (py::hasattr(obj, "__bytes__")) {
+    //                   py::bytes b = py::reinterpret_borrow<py::bytes>(obj.attr("__bytes__")());
+    //                   byte_items.emplace_back(py::cast<std::string>(b));
+    //               } else {
+    //                   throw py::value_error("All items must be bytes-like or str when the first is string-like.");
+    //               }
+    //           }
+    //           py::gil_scoped_release release;
+    //           return self.sketch(byte_items);
+    //       } else {
+    //           std::vector<uint32_t> int_items; int_items.reserve(objs.size());
+    //           for (const auto& obj : objs) {
+    //               try {
+    //                   int_items.push_back(py::cast<uint32_t>(obj));
+    //               } catch (const py::cast_error&) {
+    //                   throw py::value_error("All items must be integers when the first is not string-like.");
+    //               }
+    //           }
+    //           py::gil_scoped_release release;
+    //           return self.sketch(int_items);
+    //       }
+    //   }, py::arg("items"),
+    //     "Compute sketch for str/bytes or integer lists using FastSimilaritySketch")
 
       // Batch sketch: accept a list of batches. Each batch element can be
       // - NumPy array (np.uint32 or np.int32)
