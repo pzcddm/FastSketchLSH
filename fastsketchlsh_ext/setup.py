@@ -15,6 +15,14 @@ try:
 except ImportError:
     pybind11_available = False
 
+# Try to import numpy to access its headers during the build
+try:
+    import numpy as np
+    numpy_available = True
+except ImportError:
+    numpy_available = False
+    np = None
+
 # Cross-platform compile/link options
 compile_args = []
 link_args = []
@@ -54,6 +62,16 @@ else:  # Linux and others with libstdc++
 
 def env_truthy(name: str) -> bool:
     return os.getenv(name) in {"1", "ON", "on", "true", "TRUE", "Yes", "yes"}
+
+
+def get_numpy_include_dirs():
+    if numpy_available and np is not None:
+        return [np.get_include()]
+    try:
+        import numpy as np_local
+        return [np_local.get_include()]
+    except ImportError:
+        return []
 
 
 class BuildExt(build_ext):
@@ -158,6 +176,10 @@ class BuildExt(build_ext):
             print("  Selected SIMD: baseline/NEON (no x86-only flags)")
 
         for ext in self.extensions:
+            numpy_dirs = get_numpy_include_dirs()
+            if not numpy_dirs:
+                print("  NumPy headers not found; install numpy>=1.21 before building FastSketchLSH")
+            ext.include_dirs = list(getattr(ext, 'include_dirs', [])) + numpy_dirs
             # Append ISA flags to existing base flags
             if use_avx512:
                 ext.extra_compile_args += avx512_flags
@@ -196,6 +218,8 @@ class BuildExt(build_ext):
 
 ext_modules = []
 if pybind11_available:
+    base_include_dirs = ['include', pybind11.get_include()]
+    base_include_dirs.extend(get_numpy_include_dirs())
     ext_modules.append(Extension(
         'FastSketchLSH',
         sources=[
@@ -208,7 +232,7 @@ if pybind11_available:
             'cpp/LSH.cpp',
             'cpp/init.cpp'
         ],
-        include_dirs=['include', pybind11.get_include()],
+        include_dirs=base_include_dirs,
         language='c++',
         extra_compile_args=compile_args,
         extra_link_args=link_args,
@@ -223,6 +247,6 @@ setup(
     cmdclass={'build_ext': BuildExt},
     license='MIT',
     python_requires='>=3.7',
-    install_requires=['pybind11>=2.10'],
-    setup_requires=['pybind11>=2.10'],
+    install_requires=['pybind11>=2.10', 'numpy>=1.21'],
+    setup_requires=['pybind11>=2.10', 'numpy>=1.21'],
 )
