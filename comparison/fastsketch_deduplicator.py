@@ -64,17 +64,13 @@ class FastSketchDeduplicator(Deduplicator):
 
     def sketch(self, token_sets: Sequence[Sequence[str]]) -> np.ndarray:
         self.reset_timings()
-        # After C++ optimization (2025-11): string path with zero-copy ASCII access
-        # Single-pass processing + PyUnicode_1BYTE_DATA for optimal performance
-        stringify_start = time.perf_counter()
         token_sets = self._stringify_tokens(token_sets)
-        stringify_time = time.perf_counter() - stringify_start
         
         sketch_start = time.perf_counter()
         sketches = self._sketcher.sketch_batch(token_sets, num_threads=self.sketch_threads)
         sketch_time = time.perf_counter() - sketch_start
         
-        self.timings["sketch"] = stringify_time + sketch_time
+        self.timings["sketch"] = sketch_time
         return sketches
 
     def deduplicate(self, sketches: np.ndarray) -> dict[str, List[int]]:

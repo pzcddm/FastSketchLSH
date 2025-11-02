@@ -35,6 +35,7 @@
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
 #include <pybind11/buffer_info.h>
+#include <unicodeobject.h>
 #include <cstddef>  // For size_t and ssize_t
 #ifdef _OPENMP
 #include <omp.h>
@@ -516,64 +517,160 @@ PYBIND11_MODULE(FastSketchLSH, m) {
                                          || py::isinstance<py::str>(inner_first)
                                          || py::hasattr(inner_first, "__bytes__");
            if (inner_is_bytes_like) {
-               // Fast pointer path for bytes/str; accept arbitrary bytes (no forced encoding)
-               // Flatten all items into arrays of pointers/lengths and indptr per set
+               // SINGLE-PASS OPTIMIZED PATH: detect type and process in one pass
+               // Avoid the overhead of calling PySequence_Fast twice per batch
+               
+               // Detect homogeneous type from first item
+               PyObject* first_seq = PySequence_Fast(batches[0].ptr(), "");
+               if (!first_seq) throw py::error_already_set();
+               PyObject* first_item = PySequence_Fast_ITEMS(first_seq)[0];
+               const bool is_str_data = PyUnicode_CheckExact(first_item);
+               const bool is_bytes_data = PyBytes_CheckExact(first_item);
+               Py_DECREF(first_seq);
+               
+               // Single pass: keep sequences alive, count items, and process
+               std::vector<PyObject*> sequences; sequences.reserve(B);
                std::vector<uint64_t> indptr; indptr.reserve(B + 1); indptr.push_back(0);
                size_t total_items = 0;
-               // First pass: sizes
+               
+               // Get all sequences and count items (sequences stay alive)
                for (size_t i = 0; i < B; ++i) {
-                   py::object obj = batches[i];
-                   PyObject* seq = PySequence_Fast(obj.ptr(), "Each batch element must be a sequence of bytes-like");
-                   if (!seq) throw py::error_already_set();
+                   PyObject* seq = PySequence_Fast(batches[i].ptr(), "Each batch element must be a sequence");
+                   if (!seq) {
+                       for (auto* s : sequences) Py_DECREF(s);
+                       throw py::error_already_set();
+                   }
+                   sequences.push_back(seq);
                    const Py_ssize_t n = PySequence_Fast_GET_SIZE(seq);
                    total_items += static_cast<size_t>(n);
                    indptr.push_back(static_cast<uint64_t>(total_items));
-                   Py_DECREF(seq);
                }
+               
                std::unique_ptr<const uint8_t*[]> ptrs(new const uint8_t*[total_items]);
                std::unique_ptr<size_t[]> lengths(new size_t[total_items]);
-               // To avoid copying for memoryview/buffer objects, retain their Py_buffer until after compute
-               std::vector<Py_buffer> retained_buffers; retained_buffers.reserve(total_items);
+               std::vector<Py_buffer> retained_buffers; retained_buffers.reserve(total_items / 10);
+               std::vector<py::bytes> utf8_cache; utf8_cache.reserve(total_items / 10);
+               
                size_t pos = 0;
-               for (size_t i = 0; i < B; ++i) {
-                   py::object obj = batches[i];
-                   PyObject* seq = PySequence_Fast(obj.ptr(), "Each batch element must be a sequence of bytes-like");
-                   if (!seq) throw py::error_already_set();
-                   PyObject** items = PySequence_Fast_ITEMS(seq);
-                   const Py_ssize_t n = PySequence_Fast_GET_SIZE(seq);
-                   for (Py_ssize_t j = 0; j < n; ++j) {
-                       PyObject* it = items[j];
-                       // If str, use its UTF-8 view without creating intermediate Python bytes
-                       if (PyUnicode_Check(it)) {
-                           Py_ssize_t size = 0;
-                           const char* s = PyUnicode_AsUTF8AndSize(it, &size);
-                           if (!s) { Py_DECREF(seq); throw py::error_already_set(); }
-                           ptrs[pos] = reinterpret_cast<const uint8_t*>(s);
-                           lengths[pos] = static_cast<size_t>(size);
-                       } else if (PyBytes_Check(it)) {
-                           char* data = nullptr; Py_ssize_t size = 0;
-                           if (PyBytes_AsStringAndSize(it, &data, &size) == -1) { Py_DECREF(seq); throw py::error_already_set(); }
-                           ptrs[pos] = reinterpret_cast<const uint8_t*>(data);
-                           lengths[pos] = static_cast<size_t>(size);
-                       } else if (PyByteArray_Check(it)) {
-                           char* data = PyByteArray_AsString(it);
-                           Py_ssize_t size = PyByteArray_Size(it);
-                           ptrs[pos] = reinterpret_cast<const uint8_t*>(data);
-                           lengths[pos] = static_cast<size_t>(size);
-                       } else if (PyObject_CheckBuffer(it)) {
-                           // Generic buffer protocol (retain view to keep memory alive during compute)
-                           Py_buffer view;
-                           if (PyObject_GetBuffer(it, &view, PyBUF_SIMPLE) == -1) { Py_DECREF(seq); throw py::error_already_set(); }
-                           ptrs[pos] = reinterpret_cast<const uint8_t*>(view.buf);
-                           lengths[pos] = static_cast<size_t>(view.len);
-                           retained_buffers.push_back(view);
-                       } else {
-                           Py_DECREF(seq);
-                           throw py::value_error("All inner items must be str/bytes/bytearray or buffer");
+               
+               if (is_str_data) {
+                   // OPTIMIZED STRING PATH with ASCII fast path
+                   // ASCII strings: use PyUnicode_1BYTE_DATA (macro, zero overhead)
+                   // Non-ASCII strings: use PyUnicode_AsUTF8AndSize (function call, cached)
+                   
+                   // Batch error check flag
+                   bool had_error = false;
+                   
+                   for (size_t i = 0; i < B && !had_error; ++i) {
+                       PyObject** items = PySequence_Fast_ITEMS(sequences[i]);
+                       const Py_ssize_t n = PySequence_Fast_GET_SIZE(sequences[i]);
+                       
+                       for (Py_ssize_t j = 0; j < n; ++j) {
+                           PyObject* str_obj = items[j];
+                           
+                           // Assume strings are ready (they usually are in modern Python)
+                           // Skip PyUnicode_READY check for performance - relies on Python internals
+                           // If string isn't ready, PyUnicode_IS_ASCII will handle it gracefully
+                           
+                           // ASCII fast path: direct pointer access (macro)
+                           if (PyUnicode_IS_ASCII(str_obj)) {
+                               ptrs[pos] = reinterpret_cast<const uint8_t*>(PyUnicode_1BYTE_DATA(str_obj));
+                               lengths[pos] = static_cast<size_t>(PyUnicode_GET_LENGTH(str_obj));
+                           } else {
+                               // Non-ASCII: need UTF-8 conversion (cached by Python)
+                               Py_ssize_t size = 0;
+                               const char* s = PyUnicode_AsUTF8AndSize(str_obj, &size);
+                               if (!s) {
+                                   had_error = true;
+                                   break;
+                               }
+                               ptrs[pos] = reinterpret_cast<const uint8_t*>(s);
+                               lengths[pos] = static_cast<size_t>(size);
+                           }
+                           ++pos;
                        }
-                       ++pos;
                    }
-                   Py_DECREF(seq);
+                   
+                   if (had_error) {
+                       for (auto* seq : sequences) Py_DECREF(seq);
+                       throw py::error_already_set();
+                   }
+                   
+                   // Clean up sequences
+                   for (auto* seq : sequences) Py_DECREF(seq);
+               }
+               else if (is_bytes_data) {
+                   // OPTIMIZED BYTES PATH: assume exact bytes type
+                   for (size_t i = 0; i < B; ++i) {
+                       PyObject** items = PySequence_Fast_ITEMS(sequences[i]);
+                       const Py_ssize_t n = PySequence_Fast_GET_SIZE(sequences[i]);
+                       
+                       for (Py_ssize_t j = 0; j < n; ++j) {
+                           PyObject* it = items[j];
+                           
+                           if (PyBytes_CheckExact(it)) {
+                               ptrs[pos] = reinterpret_cast<const uint8_t*>(PyBytes_AS_STRING(it));
+                               lengths[pos] = static_cast<size_t>(PyBytes_GET_SIZE(it));
+                           }
+                           else {
+                               for (auto* seq : sequences) Py_DECREF(seq);
+                               throw py::value_error("All items must be bytes");
+                           }
+                           ++pos;
+                       }
+                   }
+                   // Clean up sequences
+                   for (auto* seq : sequences) Py_DECREF(seq);
+               }
+               else {
+                   // GENERIC PATH: mixed types or other bytes-like objects
+                   for (size_t i = 0; i < B; ++i) {
+                       PyObject** items = PySequence_Fast_ITEMS(sequences[i]);
+                       const Py_ssize_t n = PySequence_Fast_GET_SIZE(sequences[i]);
+                       for (Py_ssize_t j = 0; j < n; ++j) {
+                           PyObject* it = items[j];
+                           // If str, use its UTF-8 view without creating intermediate Python bytes
+                           if (PyUnicode_Check(it)) {
+                               Py_ssize_t size = 0;
+                               const char* s = PyUnicode_AsUTF8AndSize(it, &size);
+                               if (!s) {
+                                   for (auto* seq : sequences) Py_DECREF(seq);
+                                   throw py::error_already_set();
+                               }
+                               ptrs[pos] = reinterpret_cast<const uint8_t*>(s);
+                               lengths[pos] = static_cast<size_t>(size);
+                           } else if (PyBytes_Check(it)) {
+                               char* data = nullptr; Py_ssize_t size = 0;
+                               if (PyBytes_AsStringAndSize(it, &data, &size) == -1) {
+                                   for (auto* seq : sequences) Py_DECREF(seq);
+                                   throw py::error_already_set();
+                               }
+                               ptrs[pos] = reinterpret_cast<const uint8_t*>(data);
+                               lengths[pos] = static_cast<size_t>(size);
+                           } else if (PyByteArray_Check(it)) {
+                               char* data = PyByteArray_AsString(it);
+                               Py_ssize_t size = PyByteArray_Size(it);
+                               ptrs[pos] = reinterpret_cast<const uint8_t*>(data);
+                               lengths[pos] = static_cast<size_t>(size);
+                           } else if (PyObject_CheckBuffer(it)) {
+                               // Generic buffer protocol (retain view to keep memory alive during compute)
+                               Py_buffer view;
+                               if (PyObject_GetBuffer(it, &view, PyBUF_SIMPLE) == -1) {
+                                   for (auto* seq : sequences) Py_DECREF(seq);
+                                   throw py::error_already_set();
+                               }
+                               ptrs[pos] = reinterpret_cast<const uint8_t*>(view.buf);
+                               lengths[pos] = static_cast<size_t>(view.len);
+                               retained_buffers.push_back(view);
+                           } else {
+                               for (auto* seq : sequences) Py_DECREF(seq);
+                               throw py::value_error("All inner items must be str/bytes/bytearray or buffer");
+                           }
+                           ++pos;
+                       }
+                   }
+                   // Clean up sequences
+                   for (auto* seq : sequences) Py_DECREF(seq);
                }
                std::unique_ptr<uint64_t[]> flat(new uint64_t[B * t]);
                {
@@ -653,7 +750,6 @@ PYBIND11_MODULE(FastSketchLSH, m) {
           "batches: list of (np.int32/np.uint32 arrays) or list/tuple/set of ints or bytes/str.\n"
           "num_threads: 0 uses all threads (if OpenMP enabled). 1 forces single-thread.")
 
-      // Removed sketch_batch_flat(list-based). Use sketch_batch_flat_csr for flat outputs.
 
       // CSR zero-copy numeric batch: (data: np.uint32, indptr: np.uint64) -> np.ndarray (B, t)
       .def("sketch_batch_flat_csr", [](FastSimilaritySketch& self,

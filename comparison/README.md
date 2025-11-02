@@ -12,7 +12,7 @@ This module compares different deduplication engines (FastSketchLSH and Rensa) o
    ```bash
    python -m comparison.run --engine fastsketch --dataset PINECONE --split train
    ```
-   Valid `--engine` values are `fastsketch` and `rensa`. You can reference datasets either by the short enum (`PINECONE`, `HARIOM`, `SHUYUEJ`) or the full HuggingFace ID.
+   Valid `--engine` values are `fastsketch` and `rensa`. You can reference datasets either by the short enum (`PINECONE`, `SHUYUEJ`) or the full HuggingFace ID.
 2. The script shuffles the dataset, tokenises each record into 3-gram shingles, sketches the token sets, builds the LSH index, and queries for duplicates.
 3. Outputs include duplicate counts per query mode (e.g. `batch_duplicates=...`) and per-stage timings.
 4. If direct access to HuggingFace is slow or blocked, append `--use-hf-mirror` or supply a custom endpoint with `--hf-endpoint https://hf-mirror.com`.
