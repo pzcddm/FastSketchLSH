@@ -5,7 +5,7 @@ import pickle
 import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from datasets import load_dataset  # type: ignore
 
@@ -91,34 +91,36 @@ class DatasetPreprocessor:
 
         processed_path = self._processed_path()
         if processed_path is not None and processed_path.exists():
+            print(f"Loading from Pickle: {processed_path.name}...")
             cache_start = time.perf_counter()
             with processed_path.open("rb") as fh:
                 token_sets = pickle.load(fh)
             cache_time = time.perf_counter() - cache_start
-            if not isinstance(token_sets, list):
-                raise RuntimeError(f"Cached file missing token sets: {processed_path}")
-            print(f"Loaded preprocessed dataset from {processed_path}")
+            print(f"✓ Loaded {len(token_sets):,} items in {cache_time:.1f}s")
             return PreprocessResult(
                 texts=[""] * len(token_sets),
                 token_sets=token_sets,
                 elapsed_seconds=cache_time,
             )
 
+        # Load from HuggingFace
         load_kwargs = {}
         if self.cache_dir is not None:
             load_kwargs["cache_dir"] = str(self.cache_dir)
             load_kwargs["download_mode"] = self.download_mode
         start = time.perf_counter()
         dataset = load_dataset(self.dataset_name, **load_kwargs)  # type: ignore[arg-type]
-        records = list(dataset[self.split])  # type: ignore[index]
+        records = list[Any](dataset[self.split])  # type: ignore[index]
         random.Random(self.seed).shuffle(records)
         texts = [_extract_text(rec) for rec in records]
         token_sets = [_generate_ngrams(_tokenize(text), self.ngram_size) for text in texts]
         elapsed = time.perf_counter() - start
 
+        # Save pickle for future loads
         if processed_path is not None:
+            print(f"Saving to Pickle: {processed_path.name}...")
             with processed_path.open("wb") as fh:
                 pickle.dump(token_sets, fh, protocol=pickle.HIGHEST_PROTOCOL)
-            print(f"Saved preprocessed dataset to {processed_path}")
+            print(f"✓ Saved pickle")
 
         return PreprocessResult(texts=texts, token_sets=token_sets, elapsed_seconds=elapsed)

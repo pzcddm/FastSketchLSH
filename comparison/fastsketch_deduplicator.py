@@ -40,12 +40,41 @@ class FastSketchDeduplicator(Deduplicator):
     def _encode_tokens(token_sets: Sequence[Sequence[str]]) -> List[List[bytes]]:
         return [[str(token).encode("utf-8") for token in tokens] for tokens in token_sets]
 
+    @staticmethod
+    def _stringify_tokens(token_sets: Sequence[Sequence[str]]) -> list:
+        """
+        Convert tokens to strings, preserving NumPy arrays for optimal performance.
+        
+        If input is already NumPy arrays with strings, returns as-is to leverage
+        the fast NumPy path in sketch_batch (bypasses PySequence_Fast overhead).
+        """
+        import numpy as np
+        
+        # Check if it's a list of NumPy arrays with object dtype (strings)
+        if (len(token_sets) > 0 and 
+            isinstance(token_sets[0], np.ndarray) and 
+            token_sets[0].dtype == np.object_):
+            # Fast path: data is already NumPy arrays with strings
+            # Just ensure all elements are strings (should already be true)
+            # Return as-is to hit NumPy fast path in C++
+            return list(token_sets)
+        
+        # Slow path: convert to lists (for non-NumPy data)
+        return [[str(token) for token in tokens] for tokens in token_sets]
+
     def sketch(self, token_sets: Sequence[Sequence[str]]) -> np.ndarray:
         self.reset_timings()
-        encoded = self._encode_tokens(token_sets)
+        # After C++ optimization (2025-11): string path with zero-copy ASCII access
+        # Single-pass processing + PyUnicode_1BYTE_DATA for optimal performance
+        stringify_start = time.perf_counter()
+        token_sets = self._stringify_tokens(token_sets)
+        stringify_time = time.perf_counter() - stringify_start
+        
         sketch_start = time.perf_counter()
-        sketches = self._sketcher.sketch_batch(encoded, num_threads=self.sketch_threads)
-        self.timings["sketch"] = time.perf_counter() - sketch_start
+        sketches = self._sketcher.sketch_batch(token_sets, num_threads=self.sketch_threads)
+        sketch_time = time.perf_counter() - sketch_start
+        
+        self.timings["sketch"] = stringify_time + sketch_time
         return sketches
 
     def deduplicate(self, sketches: np.ndarray) -> dict[str, List[int]]:

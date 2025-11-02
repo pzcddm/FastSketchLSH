@@ -21,7 +21,6 @@ from comparison.util import DEFAULT_HF_ENDPOINT, DatasetPreprocessor
 
 class DatasetChoice(str, Enum):
     PINECONE = "pinecone/core-2020-05-10-deduplication"
-    HARIOM = "HariomJangra/PreTraining-Dataset"
     SHUYUEJ = "shuyuej/pretraining-dataset"
 
 
