@@ -1,6 +1,6 @@
-# Introduction
+# FastSketchLSH
 
-## FastSketchLSH
+## Introduction
 FastSketchLSH is a research project that uses Fast Similarity Sketch (an efficient MinHash‑like method) to estimate Jaccard similarity and accelerate large‑scale deduplication. It ships a high‑performance C++/SIMD extension with OpenMP and Python tooling for benchmarking and simulation.
 
 ### How it works
