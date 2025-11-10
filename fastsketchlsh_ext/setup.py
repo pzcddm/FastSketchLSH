@@ -7,6 +7,7 @@ import tempfile
 import subprocess
 import textwrap
 import shutil
+from pathlib import Path
 
 # Try to import pybind11, but don't fail if it's not available during setup
 try:
@@ -239,13 +240,28 @@ if pybind11_available:
         define_macros=define_macros,
     ))
 
+# Read long description from README.md if available
+try:
+    long_description = Path("README.md").read_text(encoding="utf-8")
+except Exception:
+    long_description = ""
+
 setup(
     name='FastSketchLSH',
     version='0.1.0',
     description='High-performance FastSketch with SIMD acceleration to deduplicate large-scale data',
+    long_description=long_description,
+    long_description_content_type='text/markdown',
+    author='FastSketchLSH Authors',
+    url='https://github.com/pzcddm/FastSketchLSH',
+    project_urls={
+        'Source': 'https://github.com/pzcddm/FastSketchLSH',
+        'Issues': 'https://github.com/pzcddm/FastSketchLSH/issues',
+    },
     ext_modules=ext_modules,
     cmdclass={'build_ext': BuildExt},
     license='MIT',
+    license_files=['LICENSE'],
     python_requires='>=3.7',
     install_requires=['pybind11>=2.10', 'numpy>=1.21'],
     setup_requires=['pybind11>=2.10', 'numpy>=1.21'],
