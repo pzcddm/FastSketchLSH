@@ -4,7 +4,7 @@
 FastSketchLSH is a research project that uses Fast Similarity Sketch (an efficient MinHash‑like method) to estimate Jaccard similarity and accelerate large‑scale deduplication. It ships a high‑performance C++/SIMD extension with OpenMP and Python tooling for benchmarking and simulation.
 
 ### How it works
-- Sketching: build fixed‑length 64‑bit sketches with `FastSimilaritySketch`, where \( \text{num\_perm} = \text{bands} \times \text{rows} \)
+- Sketching: build fixed‑length 64‑bit sketches with `FastSimilaritySketch`, where `num_perm = bands × rows`
 - Banded LSH: split each sketch into `bands` × `rows`; hash each band to a bucket; items become candidates if they collide in ≥ 1 band
 - Batch index & queries: build via `build_from_batch`; query via `batch_query_csr`, `batch_query`, or `query_candidates`
 - Tuning & parallelism: control quality with (`bands`, `rows`, `threshold`, sketch size); control parallelism with `sketch_threads`, `lsh_threads`, or `OMP_NUM_THREADS`
