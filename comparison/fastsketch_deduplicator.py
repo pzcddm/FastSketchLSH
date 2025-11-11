@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
 from typing import Dict, List, Sequence
 
 import numpy as np
@@ -91,13 +90,6 @@ class FastSketchDeduplicator(Deduplicator):
         # self.timings["query_batch_list"] = time.perf_counter() - list_start
 
         return {"query": flags}
-
-    def save_sketches(self, path: Path, sketches: np.ndarray) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        np.save(str(path), sketches)
-
-    def load_sketches(self, path: Path) -> np.ndarray:
-        return np.load(str(path))
 
     @property
     def thread_info(self) -> Dict[str, str]:

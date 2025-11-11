@@ -6,8 +6,6 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Optional
-
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -112,30 +110,6 @@ def parse_args() -> argparse.Namespace:
         help="Cache directory for HuggingFace dataset downloads (default: project_root/data/huggingface_cache).",
     )
     parser.add_argument(
-        "--save-artifacts",
-        type=str,
-        default="",
-        help="Optional path to save deduplicator artifacts (supported by fastsketch).",
-    )
-    parser.add_argument(
-        "--load-artifacts",
-        type=str,
-        default="",
-        help="Optional path to load deduplicator artifacts (supported by fastsketch).",
-    )
-    parser.add_argument(
-        "--save-fastsketch",
-        type=str,
-        dest="save_artifacts",
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument(
-        "--load-fastsketch",
-        type=str,
-        dest="load_artifacts",
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument(
         "--use-hf-mirror",
         action="store_true",
         help="Whether to force HuggingFace requests through the mirror endpoint.",
@@ -190,55 +164,26 @@ def main() -> None:
     use_mirror = args.use_hf_mirror or (args.hf_endpoint and args.hf_endpoint != DEFAULT_HF_ENDPOINT)
     hf_endpoint = args.hf_endpoint or DEFAULT_HF_ENDPOINT
 
-    load_path = Path(args.load_artifacts) if args.load_artifacts else None
-    save_path = Path(args.save_artifacts) if args.save_artifacts else None
     processed_dir = project_root / "comparison" / "processed_ds"
 
     deduper = create_deduplicator(args)
 
-    if args.engine != "fastsketch" and load_path is not None:
-        raise SystemExit("--load-artifacts is only supported for the fastsketch engine.")
-    if args.engine != "fastsketch" and save_path is not None:
-        print("Warning: save-artifacts is ignored for engines without serialization support.")
-        save_path = None
-
-    sketches = None
-    dataset_load_time: Optional[float] = None
-    if load_path is not None:
-        if not load_path.exists():
-            raise SystemExit(f"Artifacts not found: {load_path}")
-        print(f"Loading precomputed sketches from {load_path}")
-        try:
-            sketches = deduper.load_sketches(load_path)
-        except NotImplementedError:
-            raise SystemExit("This engine does not support loading precomputed sketches.")
-    else:
-        print(f"Preparing dataset '{dataset_name}' (split='{args.split}')")
-        preprocessor = DatasetPreprocessor(
-            dataset_name=dataset_name,
-            split=args.split,
-            seed=args.seed,
-            cache_dir=cache_dir,
-            use_mirror=use_mirror,
-            hf_endpoint=hf_endpoint,
-            processed_dir=processed_dir,
-        )
-        preprocess_result = preprocessor.load_and_tokenize()
-        print(
-            f"Loaded {len(preprocess_result.texts)} records "
-            f"in {preprocess_result.elapsed_seconds:.3f}s"
-        )
-        dataset_load_time = preprocess_result.elapsed_seconds
-        sketches = deduper.sketch(preprocess_result.token_sets)
-        if save_path is not None:
-            try:
-                deduper.save_sketches(save_path, sketches)
-                print(f"Saved sketches to {save_path}")
-            except NotImplementedError:
-                print("Warning: this engine does not support saving sketches; skipping.")
-
-    if sketches is None:
-        raise SystemExit("No sketches available for deduplication.")
+    print(f"Preparing dataset '{dataset_name}' (split='{args.split}')")
+    preprocessor = DatasetPreprocessor(
+        dataset_name=dataset_name,
+        split=args.split,
+        seed=args.seed,
+        cache_dir=cache_dir,
+        use_mirror=use_mirror,
+        hf_endpoint=hf_endpoint,
+        processed_dir=processed_dir,
+    )
+    preprocess_result = preprocessor.load_and_tokenize()
+    print(
+        f"Loaded {len(preprocess_result.texts)} records "
+        f"in {preprocess_result.elapsed_seconds:.3f}s"
+    )
+    sketches = deduper.sketch(preprocess_result.token_sets)
 
     duplicate_flags = deduper.deduplicate(sketches)
 
