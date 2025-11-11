@@ -1,0 +1,93 @@
+name: Build and Publish Wheels (PyPI)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-wheels:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-13, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install cibuildwheel build
+
+      - name: Build wheels via cibuildwheel
+        working-directory: fastsketchlsh_ext
+        env:
+          CIBW_BUILD: "cp38-* cp39-* cp310-* cp311-* cp312-*"
+          CIBW_SKIP: "pp* *-musllinux*"
+          CIBW_ARCHS_MACOS: "x86_64 arm64"
+          CIBW_BEFORE_BUILD: "python -m pip install -U pip setuptools wheel numpy pybind11"
+          CIBW_BEFORE_BUILD_MACOS: "brew update || true; brew install libomp || true"
+          CIBW_ENVIRONMENT_MACOS: "MACOSX_DEPLOYMENT_TARGET=11.0"
+          CIBW_BUILD_VERBOSITY: "1"
+        run: |
+          python -m cibuildwheel --output-dir dist
+
+      - name: Build sdist (Linux only)
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: fastsketchlsh_ext
+        run: |
+          python -m build --sdist
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: |
+            fastsketchlsh_ext/dist/*.whl
+            fastsketchlsh_ext/dist/*.tar.gz
+          if-no-files-found: ignore
+
+  publish-pypi:
+    needs: build-wheels
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag commit is on main
+        id: check_main
+        run: |
+          git fetch origin main --quiet
+          if git merge-base --is-ancestor "$GITHUB_SHA" "origin/main"; then
+            echo "on_main=true" >> "$GITHUB_OUTPUT"
+            echo "Tag commit is on main"
+          else
+            echo "on_main=false" >> "$GITHUB_OUTPUT"
+            echo "Tag commit is NOT on main; skipping publish"
+          fi
+
+      - name: Download all wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        if: steps.check_main.outputs.on_main == 'true'
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true
+          packages-dir: .
+
+
