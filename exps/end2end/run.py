@@ -7,14 +7,14 @@ import argparse
 import sys
 from pathlib import Path
 if __package__ is None or __package__ == "":
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from enum import Enum
 
-from comparison.deduplicator import Deduplicator
-from comparison.fastsketch_deduplicator import FastSketchDeduplicator
-from comparison.rensa_deduplicator import RensaDeduplicator
-from comparison.util import DEFAULT_HF_ENDPOINT, DatasetPreprocessor
+from .deduplicator import Deduplicator
+from .fastsketch_deduplicator import FastSketchDeduplicator
+from .rensa_deduplicator import RensaDeduplicator
+from .util import DEFAULT_HF_ENDPOINT, DatasetPreprocessor
 
 
 class DatasetChoice(str, Enum):
@@ -156,7 +156,8 @@ def main() -> None:
         args.lsh_threads = args.threads
     dataset_choice: DatasetChoice = args.dataset
     dataset_name = dataset_choice.value
-    project_root = Path(__file__).resolve().parents[1]
+    experiment_dir = Path(__file__).resolve().parent
+    project_root = experiment_dir.parents[1]
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 
@@ -164,7 +165,7 @@ def main() -> None:
     use_mirror = args.use_hf_mirror or (args.hf_endpoint and args.hf_endpoint != DEFAULT_HF_ENDPOINT)
     hf_endpoint = args.hf_endpoint or DEFAULT_HF_ENDPOINT
 
-    processed_dir = project_root / "comparison" / "processed_ds"
+    processed_dir = experiment_dir / "processed_ds"
 
     deduper = create_deduplicator(args)
 

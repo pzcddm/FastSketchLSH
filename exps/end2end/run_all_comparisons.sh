@@ -2,7 +2,7 @@
 # Purpose: Execute both Rensa and FastSketch deduplication engines on a curated
 #          set of datasets with identical LSH parameters, capture per-stage
 #          timings (sketch, build, query), and emit a Markdown-ready summary
-#          that can be pasted into comparison/README.md.
+#          that can be pasted into README.md.
 # Usage:   bash run_all_comparisons.sh
 # Notes:   - FastSketch runs with a single thread (`--threads 1`) to stay
 #            comparable with Rensa.
@@ -11,7 +11,8 @@
 
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+EXPERIMENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${EXPERIMENT_DIR}/../.." && pwd)"
 
 if [[ ! -f "${PROJECT_ROOT}/.venv/bin/activate" ]]; then
   echo "Missing Python virtual environment (.venv)." >&2
@@ -22,7 +23,7 @@ fi
 # shellcheck disable=SC1091
 source "${PROJECT_ROOT}/.venv/bin/activate"
 
-OUTPUT_DIR="${PROJECT_ROOT}/comparison/results"
+OUTPUT_DIR="${EXPERIMENT_DIR}/results"
 mkdir -p "${OUTPUT_DIR}"
 RESULTS_FILE="${OUTPUT_DIR}/comparison_timings.jsonl"
 : >"${RESULTS_FILE}"
@@ -150,12 +151,12 @@ for dataset in "${DATASETS[@]}"; do
     echo "--> Running ${engine}"
     log_file="${TMP_DIR}/${dataset}_${engine}.log"
     if [[ "${engine}" == "fastsketch" ]]; then
-      python3 -m comparison.run \
+      python3 -m exps.end2end.run \
         --engine "${engine}" \
         --dataset "${dataset}" \
         --threads 1 | tee "${log_file}"
     else
-      python3 -m comparison.run \
+      python3 -m exps.end2end.run \
         --engine "${engine}" \
         --dataset "${dataset}" \
         --threads 1 | tee "${log_file}"

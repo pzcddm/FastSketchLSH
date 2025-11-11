@@ -6,11 +6,12 @@
 # Usage:   bash fastsketch_thread_sweep.sh [DATASET_ENUM]
 # Example: bash fastsketch_thread_sweep.sh PINECONE
 # Notes:   - The dataset must correspond to a value accepted by
-#            comparison/run.py (e.g. PINECONE, SHUYUEJ, BOOKS3).
+#            exps/end2end/run.py (e.g. PINECONE, SHUYUEJ, BOOKS3).
 
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+EXPERIMENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${EXPERIMENT_DIR}/../.." && pwd)"
 
 if [[ ! -f "${PROJECT_ROOT}/.venv/bin/activate" ]]; then
   echo "Missing Python virtual environment (.venv)." >&2
@@ -24,7 +25,7 @@ source "${PROJECT_ROOT}/.venv/bin/activate"
 DATASET="${1:-PINECONE}"
 THREAD_COUNTS=(1 2 4 8)
 
-OUTPUT_DIR_REL="comparison/results"
+OUTPUT_DIR_REL="exps/end2end/results"
 OUTPUT_DIR="${PROJECT_ROOT}/${OUTPUT_DIR_REL}"
 mkdir -p "${OUTPUT_DIR}"
 DATA_FILE_BASENAME="fastsketch_thread_timings_${DATASET}.jsonl"
@@ -137,7 +138,7 @@ echo "Dataset: ${DATASET}"
 for threads in "${THREAD_COUNTS[@]}"; do
   echo "--> Running FastSketch with ${threads} thread(s)"
   log_file="${TMP_DIR}/${DATASET}_fastsketch_${threads}.log"
-  python3 -m comparison.run \
+  python3 -m exps.end2end.run \
     --engine fastsketch \
     --dataset "${DATASET}" \
     --threads "${threads}" | tee "${log_file}"

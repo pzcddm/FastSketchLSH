@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from typing import List, Sequence
 
-from comparison.deduplicator import Deduplicator
+from .deduplicator import Deduplicator
 from rensa import RMinHash, RMinHashLSH  # type: ignore
 
 

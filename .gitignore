@@ -9,5 +9,7 @@ FastSketchLSH.cp311*
 .cursorignore
 *.cpython-*
 data/
-comparison/processed_ds/
+exps/end2end/processed_ds/
 run_bookcorpusopen.sh
+*.log
+*.err

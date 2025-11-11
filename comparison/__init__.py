@@ -1,2 +1,0 @@
-"""Helpers for comparison scripts."""
-

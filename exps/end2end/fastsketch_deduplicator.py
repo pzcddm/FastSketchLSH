@@ -5,7 +5,7 @@ from typing import Dict, List, Sequence
 
 import numpy as np
 
-from comparison.deduplicator import Deduplicator
+from .deduplicator import Deduplicator
 from FastSketchLSH import FastSimilaritySketch, LSH  # type: ignore
 
 
@@ -60,7 +60,6 @@ class FastSketchDeduplicator(Deduplicator):
         sketches = self._sketcher.sketch_batch(token_sets, num_threads=self.sketch_threads)
         sketch_time = time.perf_counter() - sketch_start
         self._last_sketch_threads_label = self._format_threads(self.sketch_threads)
-        
         self.timings["sketch"] = sketch_time
         return sketches
 

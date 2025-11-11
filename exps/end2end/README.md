@@ -1,4 +1,4 @@
-# Deduplication Comparison Experiments
+# End-to-End Deduplication Experiments
 
 We benchmark end-to-end deduplication speed with two experiments: (1) single-threaded comparisons of FastSketch versus Rensa across cached HuggingFace datasets, and (2) a FastSketch thread-scaling sweep that varies OpenMP threads from 1 to 8. Both measurements include sketching, LSH build, and querying so readers can inspect true wall-clock performance.
 
@@ -7,7 +7,7 @@ We benchmark end-to-end deduplication speed with two experiments: (1) single-thr
 All runs were executed on an AMD EPYC 7352 host with 200&nbsp;GB RAM;
 
 ### Single-Thread Comparison (FastSketch vs Rensa)
-All timings exclude dataset loading/tokenisation. Totals sum the sketch, build, and query phases; FastSketch query time corresponds to the CSR batch path (`query_batch` in the logs). The `BOOKCORPUSOPEN` measurements reuse prior output from `comparison/logs/bookcorpusopen_103625.log`.
+All timings exclude dataset loading/tokenisation. Totals sum the sketch, build, and query phases; FastSketch query time corresponds to the CSR batch path (`query_batch` in the logs). The `BOOKCORPUSOPEN` measurements reuse prior output from `logs/bookcorpusopen_103625.log`.
 
 | Dataset | Engine | Sketch (s) | Build (s) | Query (s) | Total (s) | FastSketch Sketch Speedup | FastSketch Total Speedup |
 |---------|--------|------------|-----------|-----------|-----------|--------------------------|------------------------|
@@ -35,21 +35,21 @@ All timings exclude dataset loading/tokenisation. Totals sum the sketch, build, 
 - (Optional) Set `data/huggingface_cache` or another writable directory to reuse HuggingFace downloads.
 
 ### Automation Scripts
-- `comparison/run_all_comparisons.sh` runs both engines on the configured dataset list (currently `PINECONE`, `SHUYUEJ`, `BOOKS3`; `BOOKCORPUSOPEN` is commented out). The script enforces single-threaded FastSketch, parses timing lines, and prints the Markdown table above.
-- `comparison/fastsketch_thread_sweep.sh DATASET` benchmarks FastSketch with thread counts `{1, 2, 4, 8}`, logging JSONL timings and saving the scaling plot in `comparison/results/`.
+- `exps/end2end/run_all_comparisons.sh` runs both engines on the configured dataset list (currently `PINECONE`, `SHUYUEJ`, `BOOKS3`, `BOOKCORPUSOPEN`). The script enforces single-threaded FastSketch, parses timing lines, and prints the Markdown table above.
+- `exps/end2end/fastsketch_thread_sweep.sh DATASET` benchmarks FastSketch with thread counts `{1, 2, 4, 8}`, logging JSONL timings and saving the scaling plot in `exps/end2end/results/`.
 
 Activate the project virtual environment before executing either script:
 
 ```bash
 cd <project-root>
 source .venv/bin/activate
-bash comparison/run_all_comparisons.sh
+bash exps/end2end/run_all_comparisons.sh
 ```
 
 ### Manual Runs
 1. Launch the driver with your chosen engine and dataset:
    ```bash
-   python -m comparison.run --engine fastsketch --dataset PINECONE
+   python -m exps.end2end.run --engine fastsketch --dataset PINECONE
    ```
    Valid `--engine` values are `fastsketch` and `rensa`, and datasets accept either enum (`PINECONE`, `SHUYUEJ`, etc.) or full HuggingFace IDs.
 2. The script shuffles the dataset, tokenises documents into 3-gram shingles, sketches them, builds the LSH index, and reports duplicate counts plus per-stage timings.
@@ -60,5 +60,5 @@ bash comparison/run_all_comparisons.sh
 - Store the printed timings together with the command line to ensure reproducibility.
 
 ### Working With Cached Data
-- Tokenised datasets live under `comparison/processed_ds/` once generated; subsequent runs reuse them to skip downloads.
+- Tokenised datasets live under `exps/end2end/processed_ds/` once generated; subsequent runs reuse them to skip downloads.
 - Delete the cached files if you need to regenerate preprocessing (e.g. for a new split or n-gram size).
