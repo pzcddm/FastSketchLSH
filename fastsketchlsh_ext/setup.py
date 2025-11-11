@@ -262,7 +262,7 @@ setup(
     cmdclass={'build_ext': BuildExt},
     license='MIT',
     license_files=['LICENSE'],
-    python_requires='>=3.7',
+    python_requires='>=3.11',
     install_requires=['pybind11>=2.10', 'numpy>=1.21'],
     setup_requires=['pybind11>=2.10', 'numpy>=1.21'],
 )

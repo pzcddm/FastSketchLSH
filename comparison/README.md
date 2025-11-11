@@ -10,7 +10,7 @@ This module compares different deduplication engines (FastSketchLSH and Rensa) o
 ## Running an Experiment
 1. From the project root run the driver script, selecting an engine and dataset:
    ```bash
-   python -m comparison.run --engine fastsketch --dataset PINECONE --split train
+   python -m comparison.run --engine fastsketch --dataset PINECONE
    ```
    Valid `--engine` values are `fastsketch` and `rensa`. You can reference datasets either by the short enum (`PINECONE`, `SHUYUEJ`) or the full HuggingFace ID.
 2. The script shuffles the dataset, tokenises each record into 3-gram shingles, sketches the token sets, builds the LSH index, and queries for duplicates.

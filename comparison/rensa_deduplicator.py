@@ -34,10 +34,10 @@ class RensaDeduplicator(Deduplicator):
 
     def sketch(self, token_sets: Sequence[Sequence[str]]) -> List[RMinHash]:
         self.reset_timings()
-        string_tokens = self._stringify_tokens(token_sets)
+        # token_sets = self._stringify_tokens(token_sets)
         minhash_start = time.perf_counter()
         minhashes: List[RMinHash] = []  # type: ignore[var-annotated]
-        for tokens in string_tokens:
+        for tokens in token_sets:
             m = RMinHash(num_perm=self.num_perm, seed=self.seed)  # type: ignore[call-arg]
             m.update(tokens)
             minhashes.append(m)

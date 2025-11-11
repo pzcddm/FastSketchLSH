@@ -22,6 +22,8 @@ from comparison.util import DEFAULT_HF_ENDPOINT, DatasetPreprocessor
 class DatasetChoice(str, Enum):
     PINECONE = "pinecone/core-2020-05-10-deduplication"
     SHUYUEJ = "shuyuej/pretraining-dataset"
+    BOOKCORPUSOPEN = "lucadiliello/bookcorpusopen"
+    BOOKS3 = "P1ayer-1/books-3-textbooks"
 
 
 def parse_dataset(value: str) -> DatasetChoice:
@@ -78,6 +80,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.8,
         help="Target Jaccard threshold for the deduplicator.",
+    )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=None,
+        help="Threads to use for both sketching and LSH (overrides per-stage flags).",
     )
     parser.add_argument(
         "--seed",
@@ -169,6 +177,9 @@ def create_deduplicator(args: argparse.Namespace) -> Deduplicator:
 
 def main() -> None:
     args = parse_args()
+    if args.threads is not None:
+        args.sketch_threads = args.threads
+        args.lsh_threads = args.threads
     dataset_choice: DatasetChoice = args.dataset
     dataset_name = dataset_choice.value
     project_root = Path(__file__).resolve().parents[1]
@@ -232,22 +243,19 @@ def main() -> None:
     duplicate_flags = deduper.deduplicate(sketches)
 
     print(f"bands={args.bands}, rows={args.rows}, num_perm={args.bands * args.rows}")
-    if args.engine == "fastsketch":
-        try:
-            import FastSketchLSH as _fs
+    for flags in duplicate_flags.values():
+        print(f"reported_duplicates={sum(flags)}")
 
-            resolved_threads = getattr(deduper, "resolved_threads", 0)
-            resolved_label = resolved_threads if resolved_threads > 0 else "auto"
-            print(f"OpenMP max threads: {_fs.omp_max_threads()} (requested LSH threads={resolved_label})")
-        except Exception:
-            pass
-
-    for key, flags in duplicate_flags.items():
-        print(f"{key}_duplicates={sum(flags)}")
+    thread_info = getattr(deduper, "thread_info", None)
+    if isinstance(thread_info, dict) and thread_info:
+        sketch_threads = thread_info.get("sketch")
+        lsh_threads = thread_info.get("lsh")
+        if sketch_threads is not None or lsh_threads is not None:
+            sketch_label = sketch_threads if sketch_threads is not None else "n/a"
+            lsh_label = lsh_threads if lsh_threads is not None else "n/a"
+            print(f"threads: sketch={sketch_label}, lsh={lsh_label}")
 
     timing_items = []
-    if dataset_load_time is not None:
-        timing_items.append(f"dataset={dataset_load_time:.3f}")
     for key, value in deduper.timings.items():
         timing_items.append(f"{key}={value:.3f}")
     if timing_items:

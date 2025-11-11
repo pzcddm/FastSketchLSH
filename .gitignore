@@ -10,3 +10,4 @@ FastSketchLSH.cp311*
 *.cpython-*
 data/
 comparison/processed_ds/
+run_bookcorpusopen.sh
