@@ -1,8 +1,0 @@
----
-alwaysApply: true
----
-Remember you are using zsh in macOS as terminal to run the command Or you might use bash terminal in Linux
-
-This is my development env on MacOS/Linux:
-- Python 3.12.x (in pyenv)
-- You need to source .venv/bin/activate before running python !!!! (important)
