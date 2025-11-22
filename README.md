@@ -95,6 +95,7 @@ print(f"Candidates for {doc_idx}:", candidates)
 dup_flags = [1 if len(lsh.query_candidates(row)) > 1 else 0 for row in sketch_matrix]
 print("Duplicate flags:", dup_flags)
 print("Total duplicates detected:", sum(dup_flags))
+```
 
 ## Experiment Summaries
 - **Sketch microbenchmarks (`exps/sketch/`)**: Full write-up, CSVs, and plotting helpers demonstrating latency and accuracy versus `datasketch` and Rensa baselines. Reproduction steps live in `exps/sketch/README.md`.
