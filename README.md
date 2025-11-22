@@ -30,21 +30,23 @@ FastSketchLSH delivers a Python-first package that wraps a high-performance C++/
 3. Activate your environment (e.g. `source .venv/bin/activate`) before running scripts.
 
 ## Quick Start
-### Sketch Two Sets
+### Sketch two sets and estimate their Jaccard similarity
 ```python
-from FastSketchLSH import FastSimilaritySketch
-from prototype.simulation.util import estimate_jaccard
+from FastSketchLSH import FastSimilaritySketch, estimate_jaccard
 
-set_a = {f"a-{i}" for i in range(16_000)}
-set_b = {f"a-{i}" for i in range(8_000)} | {f"b-{i}" for i in range(8_000)}
+# Build list_a with 16,000 tokens labeled "a-0" to "a-15999"
+# Build list_b with 8,000 overlapping + 8,000 new tokens (true Jaccard = 1/3)
+list_a = [f"a-{i}" for i in range(16_000)]
+list_b = [f"a-{i}" for i in range(8_000)] + [f"b-{i}" for i in range(8_000)]
 
 sketcher = FastSimilaritySketch(sketch_size=256)
-sig_a = sketcher.sketch(set_a)
-sig_b = sketcher.sketch(set_b)
+sig_a = sketcher.sketch(list_a)
+sig_b = sketcher.sketch(list_b)
 
 estimated = estimate_jaccard(sig_a, sig_b)
 print(f"Estimated Jaccard similarity: {estimated:.4f}")
 ```
+
 
 ### Approximate Deduplication with LSH
 ```python

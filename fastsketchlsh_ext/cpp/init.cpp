@@ -786,6 +786,83 @@ PYBIND11_MODULE(FastSketchLSH, m) {
 
     
 
+    m.def(
+        "estimate_jaccard",
+        [](py::object sketch_a, py::object sketch_b) {
+            py::array_t<std::uint64_t> arr_a_handle;
+            py::array_t<std::uint64_t> arr_b_handle;
+            const std::uint64_t* ptr_a = nullptr;
+            const std::uint64_t* ptr_b = nullptr;
+            size_t size_a = 0;
+            size_t size_b = 0;
+            thread_local std::vector<std::uint64_t> scratch_a;
+            thread_local std::vector<std::uint64_t> scratch_b;
+
+            auto bind_view = [](py::object obj,
+                                py::array_t<std::uint64_t>& arr_handle,
+                                std::vector<std::uint64_t>& tmp,
+                                const std::uint64_t*& ptr,
+                                size_t& size) {
+                if (py::isinstance<py::array_t<std::uint64_t>>(obj)) {
+                    arr_handle = py::cast<py::array_t<std::uint64_t>>(obj);
+                    py::buffer_info buf = arr_handle.request();
+                    if (buf.ndim != 1) {
+                        throw py::value_error("Sketch arrays must be 1-dimensional");
+                    }
+                    ptr = static_cast<const std::uint64_t*>(buf.ptr);
+                    size = static_cast<size_t>(buf.size);
+                    return;
+                }
+
+                PyObject* seq = PySequence_Fast(obj.ptr(), "Sketch must be a sequence of integers");
+                if (!seq) {
+                    throw py::error_already_set();
+                }
+                const Py_ssize_t n = PySequence_Fast_GET_SIZE(seq);
+                tmp.resize(static_cast<size_t>(n));
+                PyObject** items = PySequence_Fast_ITEMS(seq);
+                for (Py_ssize_t i = 0; i < n; ++i) {
+                    unsigned long long value = PyLong_AsUnsignedLongLong(items[i]);
+                    if (value == static_cast<unsigned long long>(-1) && PyErr_Occurred()) {
+                        Py_DECREF(seq);
+                        throw py::value_error("Sketch entries must fit in uint64");
+                    }
+                    tmp[static_cast<size_t>(i)] = static_cast<std::uint64_t>(value);
+                }
+                Py_DECREF(seq);
+                ptr = tmp.data();
+                size = tmp.size();
+            };
+
+            bind_view(sketch_a, arr_a_handle, scratch_a, ptr_a, size_a);
+            bind_view(sketch_b, arr_b_handle, scratch_b, ptr_b, size_b);
+
+            if (size_a != size_b) {
+                throw py::value_error("Sketches must have identical length");
+            }
+            if (size_a == 0) {
+                throw py::value_error("Sketch length must be greater than zero");
+            }
+
+            size_t matches = 0;
+            for (size_t i = 0; i < size_a; ++i) {
+                matches += (ptr_a[i] == ptr_b[i]) ? 1 : 0;
+            }
+
+            return static_cast<double>(matches) / static_cast<double>(size_a);
+        },
+        py::arg("sketch_a"),
+        py::arg("sketch_b"),
+        "Estimate Jaccard similarity between two 1-D uint64 sketches.\n"
+        "Args:\n"
+        "  sketch_a: NumPy array (dtype=uint64) or iterable of uint64 digests.\n"
+        "  sketch_b: NumPy array (dtype=uint64) or iterable of uint64 digests.\n"
+        "Returns:\n"
+        "  float: Fraction of matching positions between the sketches.\n"
+        "Time Complexity: O(k) where k is the sketch length.\n"
+        "Space Complexity: O(1) for NumPy inputs (zero-copy), O(k) when iterables are materialized.");
+
+
     // ===================== New band-parallel LSH bindings =====================
     py::enum_<LSH::BandHashKind>(m, "BandHashKind")
         .value("splitmix64", LSH::BandHashKind::splitmix64)

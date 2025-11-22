@@ -248,7 +248,7 @@ except Exception:
 
 setup(
     name='FastSketchLSH',
-    version='0.1.0',
+    version='0.1.1',
     description='High-performance FastSketch with SIMD acceleration to deduplicate large-scale data',
     long_description=long_description,
     long_description_content_type='text/markdown',
