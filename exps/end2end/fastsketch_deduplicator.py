@@ -81,11 +81,11 @@ class FastSketchDeduplicator(Deduplicator):
         # is typically the most efficient. In practice the difference between these
         # approaches is small, so users may enable them if they prefer.
         # single_start = time.perf_counter()
-        # single_flags = [1 if len(self._lsh.query_candidates(row)) > 1 else 0 for row in sketches]
+        # flags = [1 if len(self._lsh.query_candidates(row)) > 1 else 0 for row in sketches]
         # self.timings["query_single_np"] = time.perf_counter() - single_start
         #
         # list_start = time.perf_counter()
-        # list_flags = [1 if len(row) > 1 else 0 for row in self._lsh.batch_query(sketches)]
+        # flags = [1 if len(row) > 1 else 0 for row in self._lsh.batch_query(sketches)]
         # self.timings["query_batch_list"] = time.perf_counter() - list_start
 
         return {"query": flags}

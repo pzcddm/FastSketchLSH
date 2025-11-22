@@ -48,56 +48,42 @@ print(f"Estimated Jaccard similarity: {estimated:.4f}")
 ```
 
 
-### Approximate Deduplication with LSH
-```python
-from typing import Iterable, List
-
-from FastSketchLSH import FastSimilaritySketch
-from prototype.src.fast_sketch_lsh import FastSketchLSH
-from prototype.simulation.util import estimate_jaccard
-
-documents: List[Iterable[str]] = [
-    {f"doc0-token-{i}" for i in range(10_000)},
-    {f"doc1-token-{i}" for i in range(10_000)},
-    {f"doc2-token-{i}" for i in range(10_000)},
-]
-
-lsh = FastSketchLSH(threshold=0.85, sketch_size=256, bands=32)
-for doc_id, tokens in enumerate(documents):
-    lsh.insert(f"doc-{doc_id}", tokens)
-
-query_tokens = documents[0] | {"extra-noise-token"}
-candidates = lsh.query(query_tokens)
-
-print("Candidate duplicates:", candidates)
-if candidates:
-    sketcher = FastSimilaritySketch(sketch_size=256)
-    print("Estimated Jaccard:", estimate_jaccard(
-        sketcher.sketch(documents[0]),
-        sketcher.sketch(query_tokens),
-    ))
-```
-
-## Multi-threading
-- The native extension uses OpenMP. By default (`num_threads=0`) operators consume all threads allowed by `OMP_NUM_THREADS` (or the system maximum if the variable is unset).
-- You can override threads per call by passing `num_threads` to batched sketching or the native LSH index.
+### Deduplication with LSH
+This end-to-end sample downloads a small slice of Hugging Face’s `lucadiliello/bookcorpusopen` corpus, sketches every document with `k=128`, and groups the signatures into `16` bands. Sketching each document costs `O(n + k log k)` time with `O(k)` space, while an LSH probe runs in `O(k + c)` where `c` is the number of retrieved candidates.
 
 ```python
-import numpy as np
+from __future__ import annotations
+
+from datasets import load_dataset
 from FastSketchLSH import FastSimilaritySketch, LSH
 
-# Batch sketch 10 documents using 8 threads
-docs = [np.arange(50_000, dtype=np.uint32) + offset for offset in range(10)]
-sketcher = FastSimilaritySketch(sketch_size=256)
-signatures = sketcher.sketch_batch(docs, num_threads=8)  # np.ndarray shape (10, 256)
 
-# Build a banded LSH index in parallel (<=0 -> auto threads, >0 forces the value)
-lsh = LSH(num_perm=256, num_bands=32, num_threads=8)
-for doc_id, sig in enumerate(signatures):
-    lsh.insert(doc_id, sig)
-```
+def tokenize(text: str) -> list[str]:
+    return sorted({token for token in text.lower().split() if token})
 
-Set `OMP_NUM_THREADS=8` (or any desired cap) before running scripts if you want a global default, and override with `num_threads` only for the hotspots that need tuning.
+
+# Here, 'train[:2048]' tells Hugging Face Datasets to select only the first 2048 rows from the 'train' split.
+dataset = load_dataset(
+    "lucadiliello/bookcorpusopen",
+    split="train[:2048]")
+
+texts = [row["text"] for row in dataset if row.get("text")]
+token_sets = [tokenize(text) for text in texts]
+
+sketcher = FastSimilaritySketch(sketch_size=128, seed=42)
+# Use batch mode for faster sketching (much faster than one-by-one)
+sketch_matrix = sketcher.sketch_batch(token_sets)
+
+lsh = LSH(num_perm=128, num_bands=16)
+lsh.build_from_batch(sketch_matrix)
+
+doc_idx = 0
+candidates = lsh.query_candidates(sketch_matrix[doc_idx])
+print(f"Candidates for {doc_idx}:", candidates)
+
+dup_flags = [1 if len(lsh.query_candidates(row)) > 1 else 0 for row in sketch_matrix]
+print("Duplicate flags:", dup_flags)
+print("Total duplicates detected:", sum(dup_flags))
 
 ## Experiment Summaries
 - **Sketch microbenchmarks (`exps/sketch/`)**: Full write-up, CSVs, and plotting helpers demonstrating latency and accuracy versus `datasketch` and Rensa baselines. Reproduction steps live in `exps/sketch/README.md`.
