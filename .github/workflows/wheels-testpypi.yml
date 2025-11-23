@@ -8,6 +8,10 @@ on:
         required: true
         default: "false"
   push:
+    branches:
+      - '**'
+    tags-ignore:
+      - '*'
 
 jobs:
   build-wheels:
