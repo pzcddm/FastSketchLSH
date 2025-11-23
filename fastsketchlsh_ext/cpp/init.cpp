@@ -66,7 +66,7 @@ inline std::vector<std::string> bytes_list_to_vector_zerocopy(py::list items) {
         if (py::isinstance<py::bytes>(item)) {
             // Zero-copy access to bytes data
             char* data = nullptr;
-            ssize_t size = 0;
+            Py_ssize_t size = 0;
             if (PyBytes_AsStringAndSize(item.ptr(), &data, &size) == -1) {
                 throw py::value_error("Failed to extract bytes data");
             }
