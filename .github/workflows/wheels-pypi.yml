@@ -35,7 +35,7 @@ jobs:
           CIBW_ARCHS_MACOS: "x86_64 arm64"
           CIBW_BEFORE_BUILD: "python -m pip install -U pip setuptools wheel numpy pybind11"
           CIBW_BEFORE_BUILD_MACOS: "brew update || true; brew install libomp || true"
-          CIBW_ENVIRONMENT_MACOS: "MACOSX_DEPLOYMENT_TARGET=13.0"
+          CIBW_ENVIRONMENT_MACOS: "MACOSX_DEPLOYMENT_TARGET=14.0"
           CIBW_BUILD_VERBOSITY: "1"
         run: |
           python -m cibuildwheel --output-dir dist
