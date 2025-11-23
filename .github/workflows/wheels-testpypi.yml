@@ -73,6 +73,6 @@ jobs:
           repository-url: https://test.pypi.org/legacy/
           password: ${{ secrets.TEST_PYPI_API_TOKEN }}
           skip-existing: true
-          packages-dir: .
+          packages-dir: fastsketchlsh_ext/dist
 
 
