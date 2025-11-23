@@ -2,6 +2,11 @@ name: Build and Publish Wheels (TestPyPI)
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_testpypi:
+        description: "Also publish artifacts to TestPyPI?"
+        required: true
+        default: "false"
   push:
 
 jobs:
@@ -54,6 +59,7 @@ jobs:
           if-no-files-found: ignore
 
   publish-testpypi:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish_testpypi == 'true'
     needs: build-wheels
     runs-on: ubuntu-latest
     steps:
