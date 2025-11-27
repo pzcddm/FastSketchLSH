@@ -115,19 +115,19 @@ class ComparisonResultsPlotter:
         # Plot QPS vs k
         ax.plot(filtered_data['k'], fast_qps,
                color=colors['fast'], marker=markers['fast'], linewidth=3, markersize=8,
-               label='FastSimilaritySketch (QPS)', markeredgecolor='white', markeredgewidth=1)
+               label='FastSketch', markeredgecolor='white', markeredgewidth=1)
         # KMinSketch line removed
         ax.plot(filtered_data['k'], ds_qps,
                color=colors['datasketch'], marker=markers['datasketch'], linewidth=3, markersize=8,
-               label='DatasketchMinHash (QPS)', markeredgecolor='white', markeredgewidth=1)
+               label='Datasketch', markeredgecolor='white', markeredgewidth=1)
         ax.plot(filtered_data['k'], cmins_qps,
                color=colors['cmins'], marker=markers['cmins'], linewidth=3, markersize=8,
-               label='CMinHashSketch (QPS)', markeredgecolor='white', markeredgewidth=1)
+               label='CMins (may overlap with RMins)', markeredgecolor='white', markeredgewidth=1)
         # Optional: RMinHashSketch if present
         if rmins_qps is not None:
             ax.plot(filtered_data['k'], rmins_qps,
                    color=colors['rmins'], marker=markers['rmins'], linewidth=3, markersize=8,
-                   label='RMinHashSketch (QPS)', markeredgecolor='white', markeredgewidth=1)
+                   label='RMins', markeredgecolor='white', markeredgewidth=1)
         
         ax.set_xlabel('k (Sketch Size)', fontsize=14, fontweight='bold')
         ax.set_ylabel('Average Throughput (QPS)', fontsize=14, fontweight='bold')
@@ -192,19 +192,19 @@ class ComparisonResultsPlotter:
         # Plot QPS vs n
         ax.plot(filtered_data['n'], fast_qps,
                color=colors['fast'], marker=markers['fast'], linewidth=3, markersize=8,
-               label='FastSimilaritySketch (QPS)', markeredgecolor='white', markeredgewidth=1)
+               label='FastSketch', markeredgecolor='white', markeredgewidth=1)
         # KMinSketch line removed
         ax.plot(filtered_data['n'], ds_qps,
                color=colors['datasketch'], marker=markers['datasketch'], linewidth=3, markersize=8,
-               label='DatasketchMinHash (QPS)', markeredgecolor='white', markeredgewidth=1)
+               label='Datasketch', markeredgecolor='white', markeredgewidth=1)
         ax.plot(filtered_data['n'], cmins_qps,
                color=colors['cmins'], marker=markers['cmins'], linewidth=3, markersize=8,
-               label='CMinHashSketch (QPS)', markeredgecolor='white', markeredgewidth=1)
+               label='CMins (may overlap with RMins)', markeredgecolor='white', markeredgewidth=1)
         # Optional: RMinHashSketch if present
         if rmins_qps is not None:
             ax.plot(filtered_data['n'], rmins_qps,
                    color=colors['rmins'], marker=markers['rmins'], linewidth=3, markersize=8,
-                   label='RMinHashSketch (QPS)', markeredgecolor='white', markeredgewidth=1)
+                   label='RMins', markeredgecolor='white', markeredgewidth=1)
         
         ax.set_xlabel('n (Set Size)', fontsize=14, fontweight='bold')
         ax.set_ylabel('Average Throughput (QPS)', fontsize=14, fontweight='bold')
@@ -272,7 +272,7 @@ def main():
     
     # Generate plots
     print(f"\nGenerating performance plots...")
-    plotter.plot_k_trends(fixed_n=1000)
+    plotter.plot_k_trends(fixed_n=1600)
     plotter.plot_n_trends(fixed_k=128)
     
     print(f"\nVisualization complete! Figures saved in records directory.")
