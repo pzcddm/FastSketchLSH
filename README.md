@@ -28,6 +28,9 @@ FastSketchLSH delivers a Python-first package that wraps a high-performance C++/
 - **Python ergonomics**: Thin wrappers expose the C++ core, plus reference implementations of competing sketches for fair comparisons.
 
 ## Installation
+> **Prerequisite:** Python 3.11 or newer. Support for Python 3.8 and older
+> interpreters is on the roadmap.
+
 ### PyPI (recommended)
 ```bash
 pip install fastsketchlsh
