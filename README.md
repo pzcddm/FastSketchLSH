@@ -28,6 +28,12 @@ FastSketchLSH delivers a Python-first package that wraps a high-performance C++/
 - **Python ergonomics**: Thin wrappers expose the C++ core, plus reference implementations of competing sketches for fair comparisons.
 
 ## Installation
+### PyPI (recommended)
+```bash
+pip install fastsketchlsh
+```
+
+### Build from source
 1. Build the native extension:
    ```bash
    cd fastsketchlsh_ext
