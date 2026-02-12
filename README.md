@@ -3,7 +3,7 @@
 ## Introduction
 FastSketchLSH delivers a Python-first package that wraps a high-performance C++/SIMD implementation of Fast Similarity Sketch (see Dahlgaard et al., FOCS'17 [arXiv:1704.04370](https://arxiv.org/abs/1704.04370) for the underlying algorithm). The goal is to make Jaccard estimation and locality-sensitive hashing (LSH) practical for large dataset deduplication.
 
-![FastSimilaritySketch throughput advantage](exps/sketch/records/minhash_QPS_vs_k_n1600.png)
+![FastSimilaritySketch throughput advantage](https://raw.githubusercontent.com/pzcddm/FastSketchLSH/main/exps/sketch/records/minhash_QPS_vs_k_n1600.png)
 
 | Dataset | Engine | Sketch (s) | Build (s) | Query (s) | Total (s) | FastSketchLSH Sketch Speedup | FastSketchLSH Total Speedup |
 |---------|--------|------------|-----------|-----------|-----------|--------------------------|------------------------|
