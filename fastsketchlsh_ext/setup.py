@@ -240,11 +240,14 @@ if pybind11_available:
         define_macros=define_macros,
     ))
 
-# Read long description from README.md if available
-try:
-    long_description = Path("README.md").read_text(encoding="utf-8")
-except Exception:
-    long_description = ""
+# Read long description from README.md if available.
+# Look in the package directory first, then fall back to the project root.
+_here = Path(__file__).resolve().parent
+long_description = ""
+for _candidate in [_here / "README.md", _here.parent / "README.md"]:
+    if _candidate.is_file():
+        long_description = _candidate.read_text(encoding="utf-8")
+        break
 
 setup(
     name='FastSketchLSH',

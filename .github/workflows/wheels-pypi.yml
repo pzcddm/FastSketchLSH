@@ -27,6 +27,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install cibuildwheel build
 
+      - name: Copy root README into extension package
+        run: cp README.md fastsketchlsh_ext/README.md
+
       - name: Build wheels via cibuildwheel
         working-directory: fastsketchlsh_ext
         env:
