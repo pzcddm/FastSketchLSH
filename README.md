@@ -22,6 +22,32 @@ FastSketchLSH delivers a Python-first package that wraps a high-performance C++/
 - End-to-end deduplication experiments show FastSketchLSH is typically **~2×–3.6× faster** than Rensa in single-thread runs.
 - Ground-truth comparisons confirm FastSketchLSH matches or slightly exceeds the deduplication accuracy of both Rensa and datasketch.
 
+## What's New in v0.2.0
+
+**Pre-hashed input support** -- `sketch_prehashed`, `sketch_batch_prehashed`, and `sketch_batch_flat_csr_prehashed` methods now accept `np.uint64` or `np.int64` arrays of user-provided hash values directly.  This skips the internal prehash phase entirely (no `hash_int32`, no `fnv1a64`), which is useful when you hash tokens yourself or reuse hash values across different sketch configurations.
+
+```python
+import numpy as np
+from FastSketchLSH import FastSimilaritySketch
+
+sketcher = FastSimilaritySketch(sketch_size=256, seed=42)
+
+# Single sketch from pre-hashed values (zero-copy from NumPy)
+hashes = np.array([0xDEAD, 0xBEEF, 0xCAFE, ...], dtype=np.uint64)
+digest = sketcher.sketch_prehashed(hashes)
+
+# Batch of pre-hashed arrays
+batch = [np.array([...], dtype=np.uint64) for _ in range(1000)]
+digests = sketcher.sketch_batch_prehashed(batch, num_threads=8)
+
+# CSR layout for maximum throughput
+data = np.array([...], dtype=np.uint64)
+indptr = np.array([0, 120, 250, 500], dtype=np.uint64)
+digests = sketcher.sketch_batch_flat_csr_prehashed(data, indptr, num_threads=8)
+```
+
+All prehashed paths share the same SIMD-accelerated Round 1 / Round 2 bucket-fill logic and OpenMP batch parallelism as the existing `sketch` methods.
+
 ## How It Works
 - **Fast Similarity Sketching**: SIMD-accelerated permutations compress a set into a fixed-length signature, expected time `O(n + k log k)` with `O(k)` space.
 - **Banded LSH**: Signature rows are grouped into bands; items colliding in any band become candidates for deduplication.

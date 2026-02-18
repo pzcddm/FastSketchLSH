@@ -13,3 +13,5 @@ exps/end2end/processed_ds/
 run_bookcorpusopen.sh
 *.log
 *.err
+.DS_Store
+**/.DS_Store

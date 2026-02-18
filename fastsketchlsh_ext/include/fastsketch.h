@@ -194,6 +194,16 @@ public:
                                  uint64_t* out_ptr,
                                  int num_threads = 0);
 
+    // Pre-hashed: user provides uint64 hash values, skip prehash phase entirely
+    std::vector<uint64_t> sketch_prehashed(const uint64_t* data, size_t n);
+
+    // CSR batch for pre-hashed uint64 data
+    void sketch_batch_flat_csr_prehashed(const uint64_t* data,
+                                         const uint64_t* indptr,
+                                         size_t B,
+                                         uint64_t* out_ptr,
+                                         int num_threads = 0);
+
     // Access last computed digest (for LSH Rensa compatibility)
     const std::vector<uint64_t>& digest() const noexcept { return last_digest; }
 };

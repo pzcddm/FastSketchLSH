@@ -782,6 +782,155 @@ PYBIND11_MODULE(FastSketchLSH, m) {
            );
       }, py::arg("data"), py::arg("indptr"), py::arg("num_threads") = 0,
          "CSR zero-copy batch: data(np.uint32), indptr(np.uint64 length B+1) -> np.ndarray (B,t)")
+
+      // ===================== Pre-hashed sketch methods =====================
+
+      // sketch_prehashed: np.uint64 zero-copy fast path
+      .def("sketch_prehashed", [](FastSimilaritySketch& self,
+                                  py::array_t<uint64_t, py::array::c_style | py::array::forcecast> arr) {
+          py::buffer_info buf = arr.request();
+          if (buf.ndim != 1) {
+              throw py::value_error("NumPy array must be 1-dimensional");
+          }
+          if (buf.size == 0) {
+              throw py::value_error("Array cannot be empty");
+          }
+          const auto* ptr = static_cast<const uint64_t*>(buf.ptr);
+          const size_t n = static_cast<size_t>(buf.size);
+          py::gil_scoped_release release;
+          return self.sketch_prehashed(ptr, n);
+      }, py::arg("items"),
+        "Compute sketch from pre-hashed uint64 values (no rehashing, zero-copy fast path)")
+
+      // sketch_prehashed: np.int64 (reinterpret as uint64 bit patterns)
+      .def("sketch_prehashed", [](FastSimilaritySketch& self,
+                                  py::array_t<int64_t, py::array::c_style | py::array::forcecast> arr) {
+          py::buffer_info buf = arr.request();
+          if (buf.ndim != 1) {
+              throw py::value_error("NumPy array must be 1-dimensional");
+          }
+          if (buf.size == 0) {
+              throw py::value_error("Array cannot be empty");
+          }
+          const auto* ptr = reinterpret_cast<const uint64_t*>(static_cast<const int64_t*>(buf.ptr));
+          const size_t n = static_cast<size_t>(buf.size);
+          py::gil_scoped_release release;
+          return self.sketch_prehashed(ptr, n);
+      }, py::arg("items"),
+        "Compute sketch from pre-hashed int64 values (reinterpreted as uint64 bit patterns)")
+
+      // sketch_prehashed: Python list/tuple of ints fallback
+      .def("sketch_prehashed", [](FastSimilaritySketch& self, py::object items_obj) {
+          PyObject* obj_ptr = items_obj.ptr();
+          PyObject* seq = PySequence_Fast(obj_ptr, "items must be a list or tuple of integers");
+          if (!seq) throw py::error_already_set();
+          const Py_ssize_t n = PySequence_Fast_GET_SIZE(seq);
+          if (n == 0) {
+              Py_DECREF(seq);
+              throw py::value_error("Items cannot be empty");
+          }
+          std::unique_ptr<uint64_t[]> buf(new uint64_t[static_cast<size_t>(n)]);
+          PyObject** items = PySequence_Fast_ITEMS(seq);
+          for (Py_ssize_t i = 0; i < n; ++i) {
+              unsigned long long v = PyLong_AsUnsignedLongLong(items[i]);
+              if (v == (unsigned long long)-1 && PyErr_Occurred()) {
+                  Py_DECREF(seq);
+                  throw py::value_error("All items must be non-negative integers fitting in uint64");
+              }
+              buf[static_cast<size_t>(i)] = static_cast<uint64_t>(v);
+          }
+          Py_DECREF(seq);
+          const uint64_t* ptr = buf.get();
+          py::gil_scoped_release release;
+          return self.sketch_prehashed(ptr, static_cast<size_t>(n));
+      }, py::arg("items"),
+        "Compute sketch from pre-hashed values given as a Python list/tuple of ints")
+
+      // sketch_batch_prehashed: list of np.uint64/np.int64 arrays -> np.ndarray (B, t)
+      .def("sketch_batch_prehashed", [](FastSimilaritySketch& self, py::list batches, int num_threads) -> py::object {
+          if (batches.size() == 0) {
+              throw py::value_error("batches cannot be empty");
+          }
+          const size_t B = static_cast<size_t>(batches.size());
+          const size_t t = static_cast<size_t>(self.t);
+
+          // Build pointer+length arrays from each 1D numpy array
+          std::unique_ptr<const uint64_t*[]> ptrs(new const uint64_t*[B]);
+          std::unique_ptr<size_t[]> lens(new size_t[B]);
+          // Keep array handles alive for the duration of compute
+          std::vector<py::array_t<uint64_t, py::array::c_style | py::array::forcecast>> handles(B);
+
+          for (size_t i = 0; i < B; ++i) {
+              handles[i] = py::cast<py::array_t<uint64_t, py::array::c_style | py::array::forcecast>>(batches[i]);
+              py::buffer_info bi = handles[i].request();
+              if (bi.ndim != 1) throw py::value_error("All arrays must be 1D");
+              ptrs[i] = static_cast<const uint64_t*>(bi.ptr);
+              lens[i] = static_cast<size_t>(bi.size);
+          }
+
+          // Build CSR indptr from lengths
+          std::unique_ptr<uint64_t[]> indptr(new uint64_t[B + 1]);
+          indptr[0] = 0;
+          size_t total = 0;
+          for (size_t i = 0; i < B; ++i) {
+              total += lens[i];
+              indptr[i + 1] = static_cast<uint64_t>(total);
+          }
+
+          // Concatenate into flat data buffer for CSR call
+          std::unique_ptr<uint64_t[]> flat_data(new uint64_t[total]);
+          for (size_t i = 0; i < B; ++i) {
+              std::memcpy(flat_data.get() + indptr[i], ptrs[i], lens[i] * sizeof(uint64_t));
+          }
+
+          std::unique_ptr<uint64_t[]> flat_out(new uint64_t[B * t]);
+          {
+              py::gil_scoped_release release;
+              self.sketch_batch_flat_csr_prehashed(flat_data.get(), indptr.get(), B, flat_out.get(), num_threads);
+          }
+          uint64_t* raw = flat_out.release();
+          py::capsule owner(raw, [](void* f){ delete[] reinterpret_cast<uint64_t*>(f); });
+          return py::array(
+              py::dtype::of<uint64_t>(),
+              std::vector<ssize_t>{(ssize_t)B, (ssize_t)t},
+              std::vector<ssize_t>{(ssize_t)(t * sizeof(uint64_t)), (ssize_t)sizeof(uint64_t)},
+              raw,
+              owner
+          );
+      }, py::arg("batches"), py::arg("num_threads") = 0,
+         "Compute sketches for a batch of pre-hashed uint64/int64 arrays.\n"
+         "batches: list of 1D NumPy arrays (uint64 or int64).\n"
+         "Returns np.ndarray (B, t) of uint64.")
+
+      // sketch_batch_flat_csr_prehashed: CSR format for pre-hashed uint64 data
+      .def("sketch_batch_flat_csr_prehashed", [](FastSimilaritySketch& self,
+                                                  py::array_t<uint64_t, py::array::c_style | py::array::forcecast> data,
+                                                  py::array_t<uint64_t, py::array::c_style | py::array::forcecast> indptr,
+                                                  int num_threads) {
+           py::buffer_info bd = data.request();
+           py::buffer_info bi = indptr.request();
+           if (bi.ndim != 1 || bd.ndim != 1) throw py::value_error("data and indptr must be 1D arrays");
+           if (bi.size < 2) throw py::value_error("indptr must have length >= 2");
+           const size_t B = static_cast<size_t>(bi.size - 1);
+           const size_t t = static_cast<size_t>(self.t);
+           const uint64_t* dptr = static_cast<const uint64_t*>(bd.ptr);
+           const uint64_t* iptr = static_cast<const uint64_t*>(bi.ptr);
+           std::unique_ptr<uint64_t[]> flat(new uint64_t[B * t]);
+           {
+               py::gil_scoped_release release;
+               self.sketch_batch_flat_csr_prehashed(dptr, iptr, B, flat.get(), num_threads);
+           }
+           uint64_t* raw = flat.release();
+           py::capsule owner(raw, [](void* f){ delete[] reinterpret_cast<uint64_t*>(f); });
+           return py::array(
+               py::dtype::of<uint64_t>(),
+               std::vector<ssize_t>{(ssize_t)B, (ssize_t)t},
+               std::vector<ssize_t>{(ssize_t)(t * sizeof(uint64_t)), (ssize_t)sizeof(uint64_t)},
+               raw,
+               owner
+           );
+      }, py::arg("data"), py::arg("indptr"), py::arg("num_threads") = 0,
+         "CSR batch for pre-hashed uint64 data: data(np.uint64), indptr(np.uint64 length B+1) -> np.ndarray (B,t)")
  ;
 
     
