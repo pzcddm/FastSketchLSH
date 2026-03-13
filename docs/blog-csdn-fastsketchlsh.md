@@ -4,8 +4,8 @@
 
 论文背景：**Fast Similarity Sketching**（arXiv:1704.04370v4，FOCS’17 扩展版）
 
-最近在优化大规模去重流水线，基于之前的知识, 我们team做了一个基于Fast Similarity Sketching 的Python 去重包fastsketchlsh, 并且我们先后对比了 `datasketch`、`rensa` 和我们自己做的 fastsketchlsh。  
-这篇blog就把过程里的关键问题讲透：传统 k-mins 为什么慢、FastSketch 为啥快、以及它和 LSH 搭配时为什么在工程上可用。
+最近在做大规模文本去重时，我们基于 Fast Similarity Sketching 做了一个 Python 去重包 `fastsketchlsh`，也拿它和 `datasketch`、`rensa` 做了对比。  
+这篇文章主要讲三件事：传统 k-mins 为什么慢，FastSketch 为什么快，以及它和 LSH 搭配后在工程里怎么落地。
 
 ---
 
@@ -38,7 +38,7 @@ $$
 优点：快、准、实现简单。  
 缺点：对“近似重复”（少量增删改、顺序变化、模板文本）不鲁棒。
 
-### 1.2 近似去重（本文主要讲: 集合相似度 Jaccard）
+### 1.2 近似去重（本文主要讲：集合相似度 Jaccard）
 
 文本（或 token 序列） -> shingle / n-gram -> 看成集合 -> **Jaccard 相似度**：
 
@@ -106,7 +106,11 @@ $$
   - `h3(A)` 最小值是 `4`
   - `h4(A)` 最小值是 `2`
 - 则 `S(A)=[5,3,4,2]`。
-- 若 `S(B)=[5,9,4,2]`，则 4 维里有 3 维相等，估计 `\hat{J}(A,B)=3/4=0.75`。
+- 若 `S(B)=[5,9,4,2]`，则 4 维里有 3 维相等，因此估计值为：
+
+$$
+\hat{J}(A,B)=\frac{3}{4}=0.75
+$$
 
 这个例子里你会直接看到：为了得到 4 维签名，我们确实做了“4 个哈希函数 x 5 个元素”的扫描。
 
@@ -126,7 +130,7 @@ $$
 
 ## 3. 为什么很多工程里 datasketch / 传统 MinHash 仍然慢？
 
-这里按工程视角 + 算法复杂度直接说结论（不展开底层运行时细节）：
+这里只从工程和复杂度两个角度说结论，不展开底层运行时细节：
 
 1. **`datasketch` 纯 Python 实现，工程上更慢**  
 在大规模循环和哈希更新上，纯 Python 的吞吐很难拉满。
@@ -174,21 +178,33 @@ $$
 \mathbb{E}[\text{work}] = O(n+k\log k)
 $$
 
-带数字感受一下这两种工作量（仅看量级）：
+拿一组数字看量级差异：
 
 - 设 `n=10,000`、`k=256`。
 - k-mins：大致是 `k*n=2,560,000` 次“元素-哈希维度”处理。
 - FastSketch：是 `R*n`。如果 `R=2`，就是约 `20,000` 次；如果 `R=3`，约 `30,000` 次。
 
-所以 FastSketch 的关键不是“每一步更神奇”，而是把“必须做 `k` 轮”改成“做到桶填满就停”。
+FastSketch 的关键变化，不在单步操作，而在于把“固定做 `k` 轮”改成“桶填满就停”。
 
-这就是从 `O(k\cdot n)` 降到 `O(n+k\log k)` 的核心思想，也是 FastSketchLSH 引入 FastSketch 的根本原因。
+这也是它能把复杂度从
+
+$$
+O(k\cdot n)
+$$
+
+降到
+
+$$
+O(n+k\log k)
+$$
+
+的原因。
 
 ---
 
 ## 4. Fast Similarity Sketching：更快且保留 MinHash 级别性质
 
-本仓库的 FastSketchLSH，核心思想来自论文 **Fast Similarity Sketching（arXiv:1704.04370v4）**，它正面回答了上面这个问题：在保持 MinHash 级别统计性质的同时，把“`k` 次全扫”改成“少量轮次 + 提前停止”。
+本仓库的 FastSketchLSH，核心思想来自论文 **Fast Similarity Sketching（arXiv:1704.04370v4）**。核心点是：在保持 MinHash 级别统计性质的同时，把“`k` 次全扫”改成“少量轮次 + 提前停止”。
 
 ### 4.0 先看 FastSketch 伪代码（工程版）
 
@@ -255,21 +271,25 @@ $$
 \mathbb{E}[X_i]=J(A,B)
 $$
 
-下面给两条不靠“夹逼”的证明思路（博客里可并列放）：
+下面给两条更容易读的证明思路：
 
 **路线 A：按轮次分解（第一轮、第二轮、...、兜底轮）**
 
-固定一个坐标 `i`，令并集 `U=A\cup B`，交集大小记为 `c=|A\cap B|`，并集大小记为 `m=|U|`，则 `J=c/m`。
+固定一个坐标 `i`。令并集为 `U = A ∪ B`，交集大小为 `c = |A ∩ B|`，并集大小为 `m = |U|`，于是有：
 
-- 定义 `E_r`：坐标 `i` 在第 `r` 轮（`r=1,\dots,2k`，论文写作 `2t`）首次命中。
-- 定义 `E_\star`：前 `2k` 轮都未命中，最后由兜底步骤填充。
-- 事件族 `\{E_1,\dots,E_{2k},E_\star\}` 两两互斥且完备：
+$$
+J=\frac{c}{m}
+$$
+
+- 定义 `E_r`：坐标 `i` 在第 `r` 轮（`r` 从 1 到 `2k`，论文写作 `2t`）首次命中。
+- 定义 `E*`：前 `2k` 轮都未命中，最后由兜底步骤填充。
+- 事件族 `{E_1, ..., E_{2k}, E*}` 两两互斥且完备：
 
 $$
 \sum_{r=1}^{2k}\Pr[E_r]+\Pr[E_\star]=1
 $$
 
-在任一事件 `E`（`E_r` 或 `E_\star`）下，坐标 `i` 的 winning 元素记为 `W_i`。  
+在任一事件 `E`（`E_r` 或 `E*`）下，坐标 `i` 的 winning 元素记为 `W_i`。  
 由于哈希/分桶过程对 `U` 中每个元素是同分布、与“是否属于交集”无关，`W_i` 落到交集的条件概率恒为：
 
 $$
@@ -296,7 +316,7 @@ $$
 **路线 B：排列对称性**
 
 同样固定坐标 `i`，令 `W_i` 为最终写入该坐标的元素。  
-FastSketch 的规则是 label-oblivious 的：只看哈希值/键值，不看元素身份。对 `U` 上任意置换 $\sigma$，都有分布不变性：
+FastSketch 的规则是 label-oblivious 的：只看哈希值或键值，不看元素身份。对 `U` 上任意置换 `σ`，都有分布不变性：
 
 $$
 W_i \overset{d}{=} \sigma(W_i)
@@ -319,8 +339,8 @@ $$
 =J
 $$
 
-同样得到 $\mathbb{E}[X_i]=J$。  
-这里把它作为直觉解释更合适：严格证明要结合算法构造细节。关键点是补位机制没有破坏均匀性，所以不会因为“空桶修复”引入偏差。
+这一路的结论也是每一维的期望仍然等于 `J`。  
+这里更适合作为直觉解释：严格证明还要结合算法构造细节。关键点是补位机制没有破坏均匀性，所以不会因为“空桶修复”引入偏差。
 
 2. **Chernoff-style concentration（Chernoff 风格集中）**  
    直观上，`X` 不只是“期望正确”，还会高概率贴近 `kJ`，偏差概率随 `k` 指数下降。可写成典型形式：
@@ -329,7 +349,7 @@ $$
 \Pr\big(|X-kJ|>\epsilon kJ\big)\le 2e^{-c\epsilon^2 kJ},\quad 0<\epsilon\le 1
 $$
 
-其中 `epsilon` 是**相对误差阈值**：例如 `epsilon=0.1` 表示“偏离超过 `10% × kJ`”。  
+其中 `epsilon` 是**相对误差阈值**：例如 `epsilon = 0.1` 表示“偏离超过 `10% × kJ`”。  
 `c>0` 是常数（与 `k, J, epsilon` 无关）。
 
 这对 LSH 很关键：你按阈值做召回时，结果更稳定，不容易因为采样噪声大幅抖动。
@@ -348,7 +368,7 @@ $$
 - 设 `k=256`，一条文本有 `n=1200` 个 token。
 - 第 1 轮里，1200 个 token 会被随机映射到 256 个桶并更新最小 key。
 - 当 `n` 相对 `k` 足够大时，绝大多数桶会在第一轮就被命中并填满，此时直接停止，`R≈1`。
-- 这也和我们在仓库里的经验一致：当 token 超过约 700 时，很多样本第一轮就能填满全部桶。
+- 从仓库里的实测看，当 token 超过约 700 时，很多样本第一轮就能填满全部桶。
 
 ### 4.3 关键复杂度结论（Lemma 1）
 
@@ -366,12 +386,17 @@ $$
 
 本质是把 `n` 从乘法项变成加法项，大集合时收益非常大。
 
-这里的 `k\log k` 直觉来自 Coupon Collector：要把 `k` 个桶基本填满，期望命中次数量级是 `\Theta(k\log k)`。  
-可以把它想成“随机往 `k` 个桶里扔球”：前面很快就能命中大部分桶，但最后几个空桶会越来越难补齐，因此总次数会多出一个 `\log k` 因子。
+这里的 `k log k` 可以从 Coupon Collector 理解：要把 `k` 个桶基本填满，期望命中次数量级是
+
+$$
+\Theta(k\log k)
+$$
+
+可以把它想成“随机往 `k` 个桶里扔球”：前面很快就能命中大部分桶，但最后几个空桶会越来越难补齐，因此总次数会多出一个 `log k` 因子。
 
 ### 4.4 为什么还能估计 Jaccard 并有 Chernoff 集中
 
-上一节已经给了一个工程直觉版结论：单维有
+上一节的结论可以直接记成：单维有
 
 $$
 \mathbb{E}[X_i]=J
@@ -383,7 +408,7 @@ $$
 \mathbb{E}[X/k]=J
 $$
 
-更严格的概率尾界（Chernoff-style concentration）在论文里用更完整的工具来证明；工程上你可以理解为：`X` 会稳定集中在 `kJ` 附近，这就是 FastSketch 做 LSH 阈值筛时表现稳定的根本原因。
+更严格的概率尾界在论文里有完整证明。对工程使用来说，重点是 `X` 会稳定集中在 `kJ` 附近，所以 FastSketch 做 LSH 阈值筛时不会比 MinHash 更飘。
 
 ---
 
@@ -418,9 +443,9 @@ FastSketchLSH 是面向大规模去重的研究/工程实现集合：
 6. 补空：如果仍有空桶，用额外轮次补齐。
 
 这和论文 Similarity-S 的目标一致，但写法是工程优化版。  
-再强调一次：论文 Algorithm 1 原始写法是“`2t` 个哈希函数 + 前后半区间映射”；这里实现的是“轮次入哈希”的 practical 版本，代码路径更直接。
+论文 Algorithm 1 的原始写法是“`2t` 个哈希函数 + 前后半区间映射”；这里实现的是“轮次入哈希”的 practical 版本，代码路径更直接。
 
-另外补一个工程实测结论：**当 token 数超过约 700 时，约 99% 的样本会在第一轮就填满所有桶**。这也是中长文本上吞吐很高的直接原因。
+实测里，**当 token 数超过约 700 时，约 99% 的样本会在第一轮就填满所有桶**，所以中长文本上的吞吐会比较高。
 
 ---
 
@@ -445,7 +470,7 @@ $$
 \le p_{\text{band}} \le J^r
 $$
 
-例如常用参数 `k=128,r=8,J=0.7` 时，上界 `J^r=0.0576`，下界约 `0.0522`，两者已经很接近。
+例如常用参数 `k=128, r=8, J=0.7` 时，上界是 `0.0576`，下界约 `0.0522`，两者已经很接近。
 
 在工程里我们据此用近似：
 
@@ -466,7 +491,7 @@ $$
 
 ### 7.1 我们自己模拟的 S-curve：k-mins LSH 和 FastSketch LSH 几乎重叠
 
-下面这张图是我们在仓库里模拟得到的（`k=128, b=16, r=8, \theta=0.7`）：
+下面这张图是我们在仓库里模拟得到的（`k=128, b=16, r=8, 阈值=0.7`）：
 
 ![KminsLSH&FastSketchLSH_Distribution](https://i-blog.csdnimg.cn/direct/a071252bf09d467180231f665880d2c6.png#pic_center)
 
@@ -497,9 +522,9 @@ $$
 
 ## 8. 结果：速度与准确性
 
-### 8.0 Setting
+### 8.0 实验设置
 
-下面表格为了公平起见我们按单线程看结果（用于和其他实现做公平对比）。即便在这个setting下，FastSketchLSH 也有明显 speedup。  
+下面表格统一按单线程看结果，用来和其他实现做公平对比。即便在这个设置下，FastSketchLSH 也有明显加速。  
 同时 FastSketchLSH 本身支持多线程：`FastSimilaritySketch.sketch_batch(..., num_threads=...)` 和 `LSH(..., num_threads=...)`，在 OpenMP 可用时还能继续提速。
 
 ### 8.1 估计分布/方差（simulation）
@@ -511,7 +536,8 @@ $$
 
 同样 `k` 下，FastSketch 更集中。
 
-一个很稳定的经验是：`k` 越大、文档（token set）越大，FastSketch 的相对优势通常越明显。
+一个比较稳定的经验是：`k` 越大、文档（token set）越大，FastSketch 的相对优势通常越明显。
+
 ### 8.2 去重流水线时间（evaluation）
 
 单线程对比示例：
@@ -527,12 +553,13 @@ $$
 | SHUYUEJ | rensa | 3.749 | 0.037 | 0.044 | 3.830 | - | - |
 | SHUYUEJ | fastsketchlsh | 1.132 | 0.093 | 0.121 | 1.346 | 3.31× | 2.85× |
 
-对应总耗时 speedup：
+对应总耗时加速比：
 
 - `BOOKCORPUSOPEN`: `3.59x`
 - `BOOKS3`: `3.37x`
 - `PINECONE`: `1.95x`
 - `SHUYUEJ`: `2.85x`
+
 ---
 
 
@@ -622,7 +649,7 @@ bash exps/end2end/run_all_comparisons.sh
 1. **sketch_size（k）**：常用 `128/256/512`。k 越大越稳，但计算和内存也更高。
 2. **LSH bands/rows**：满足 `k = b * r`，按目标阈值调 S-curve。
 3. **tokenization 很关键**：分词、停用词、ngram 直接影响 Jaccard 语义。
-4. **LSH 只做候选召回**：虽然在目标Jaccard = 0.8/0.9 的时候一般来说已经很准了 但是如果设置的阈值较低的话通常还要做二阶段验证（精确 Jaccard 或其他相似度）。
+4. **LSH 只做候选召回**：如果目标 Jaccard 在 `0.8/0.9` 这类较高区间，LSH 往往已经比较准；但阈值设得更低时，通常还是要做二阶段验证（精确 Jaccard 或其他相似度）。
 5. **经验规律**：在我们的实验里，`k` 越大、文档越长（token 越多），FastSketch 相对传统 `O(k·n)` 路线的速度优势通常越大；小 `k`、小文档下差距会缩小。
 ---
 
@@ -632,15 +659,16 @@ bash exps/end2end/run_all_comparisons.sh
 - `datasketch` 纯 Python，常见场景会慢；在 sketch 阶段，FastSimilaritySketch 对它通常有一个数量级以上优势（常见 200x+）。
 - `rensa` 是 k-mins 路线 SOTA；端到端对比里 FastSketchLSH 仍有稳定加速（约 1.95x–3.59x）。
 - Fast Similarity Sketching 把复杂度做到 `O(n + k log k)`，并保持 MinHash 级别理论性质。
-- FastSketchLSH 给了可复现、可落地的工程实现与实验结果.
+- FastSketchLSH 给了可复现、可落地的工程实现与实验结果。
 
 ---
 
-## 支持项目
+## 项目地址
 
-如果这篇文章对你有帮助，欢迎到仓库给我们点一个 Star，这对我们后续持续优化和维护真的真的非常重要：  
 <https://github.com/pzcddm/FastSketchLSH>
+
 ---
+
 ## 致谢
 
 感谢团队的持续投入与协作：
@@ -649,6 +677,7 @@ bash exps/end2end/run_all_comparisons.sh
 - Yixuan Cao
 - Fangcao Jian
 - Huitong Jin
+
 ## 参考
 
 - Fast Similarity Sketching（arXiv:1704.04370v4）  
