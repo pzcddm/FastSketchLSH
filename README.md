@@ -5,22 +5,10 @@ FastSketchLSH delivers a Python-first package that wraps a high-performance C++/
 
 ![FastSimilaritySketch throughput advantage](https://raw.githubusercontent.com/pzcddm/FastSketchLSH/main/exps/sketch/records/minhash_QPS_vs_k_n1600.png)
 
-| Dataset | Engine | Sketch (s) | Build (s) | Query (s) | Total (s) | FastSketchLSH Sketch Speedup | FastSketchLSH Total Speedup |
-|---------|--------|------------|-----------|-----------|-----------|--------------------------|------------------------|
-| BOOKCORPUSOPEN | rensa | 198.545 | 0.026 | 0.018 | 198.589 | - | - |
-| BOOKCORPUSOPEN | fastsketchlsh | 55.280 | 0.039 | 0.031 | 55.350 | 3.59× | 3.59× |
-| BOOKS3 | rensa | 95.915 | 0.005 | 0.003 | 95.923 | - | - |
-| BOOKS3 | fastsketchlsh | 28.440 | 0.008 | 0.007 | 28.455 | 3.37× | 3.37× |
-| PINECONE | rensa | 3.929 | 0.141 | 0.153 | 4.223 | - | - |
-| PINECONE | fastsketchlsh | 1.521 | 0.249 | 0.396 | 2.166 | 2.58× | 1.95× |
-| SHUYUEJ | rensa | 3.749 | 0.037 | 0.044 | 3.830 | - | - |
-| SHUYUEJ | fastsketchlsh | 1.132 | 0.093 | 0.121 | 1.346 | 3.31× | 2.85× |
-
 ### Headline Results
 - `FastSimilaritySketch` maintains **sub-millisecond** sketch times even when each set holds **1 600 tokens**, keeping the absolute Jaccard error around **0.03–0.06**.
-- At the sketch level, FastSimilaritySketch stays **200×–990× faster** than `datasketch` MinHash and still **8×–23×** faster than Rensa’s `CMinHash`/`RMinHash`, while matching their accuracy—these gains matter most for large documents.
-- End-to-end deduplication experiments show FastSketchLSH is typically **~2×–3.6× faster** than Rensa in single-thread runs.
-- Ground-truth comparisons confirm FastSketchLSH matches or slightly exceeds the deduplication accuracy of both Rensa and datasketch.
+- At the sketch level, FastSimilaritySketch stays **200×–990× faster** than `datasketch` MinHash while matching its accuracy on the included microbenchmarks.
+- Ground-truth comparisons confirm FastSketchLSH remains competitive on deduplication quality.
 
 ## What's New in v0.2.0
 
@@ -133,7 +121,7 @@ print("Total duplicates detected:", sum(dup_flags))
 ```
 
 ## Experiment Summaries
-- **Sketch microbenchmarks (`exps/sketch/`)**: Full write-up, CSVs, and plotting helpers demonstrating latency and accuracy versus `datasketch` and Rensa baselines. Reproduction steps live in `exps/sketch/README.md`.
+- **Sketch microbenchmarks (`exps/sketch/`)**: Full write-up, CSVs, and plotting helpers demonstrating latency and accuracy versus standard MinHash baselines. Reproduction steps live in `exps/sketch/README.md`.
 - **Ground-truth accuracy (`exps/accuracy/`)**: Jaccard estimation and dedup quality measured against labelled datasets. See `exps/accuracy/README.md` for reproduction commands.
 - **End-to-end pipelines (`exps/end2end/`)**: Thread-scaled deduplication sweeps on large corpora, plus scripts for batch comparisons. Details in `exps/end2end/README.md`.
 
