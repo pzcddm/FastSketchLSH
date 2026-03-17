@@ -2,7 +2,7 @@
 
 Fair end-to-end benchmarks comparing FastSketchLSH and Rensa using standard MinHash. Both engines start from the same tokenized documents; dataset loading and preprocessing are excluded from engine time. Measurements include sketching, LSH build, and querying so readers can inspect true wall-clock performance.
 
-> **Why not Rensa's rho mode?** Rensa also exposes a "rho" sketch path (`digest_matrix_from_token_sets_rho`) that aggressively sub-samples a small number of tokens per document instead of hashing all of them. This dramatically cuts sketch time but sacrifices duplicate-detection accuracy. Comparing rho-mode Rensa against standard-MinHash FastSketch would not be an apples-to-apples comparison, so it is excluded from all benchmarks here.
+> **Why not Rensa's rho mode?** Rensa also exposes a `rho` sketch path (`digest_matrix_from_token_sets_rho`) that aggressively samples only a small subset of tokens per document instead of hashing them all. If a reader is comfortable with that trade-off, we would generally expect rho-mode Rensa to be faster than the standard-MinHash path compared here. FastSketchLSH does not currently implement an equally aggressive token-sampling scheme, so comparing rho-mode Rensa against standard FastSketch would not be an apples-to-apples benchmark. For readers who are happy to use token sampling and accept the associated accuracy trade-off, Rensa's rho path is a sensible option to evaluate directly; we simply leave it out of the tables below because it targets a different point on the speed/accuracy curve.
 
 ## Speed Highlights
 
