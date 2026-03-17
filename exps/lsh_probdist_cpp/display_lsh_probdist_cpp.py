@@ -173,7 +173,7 @@ def simulate_fastsketch_lsh_curve(
     For each J, this estimates:
         Pr[two sets collide in at least one band]
     """
-    sketcher = FastSimilaritySketch(sketch_size=sketch_size, seed=seed)
+    sketcher = FastSimilaritySketch(size=sketch_size, seed=seed)
     rates = np.zeros_like(j_values, dtype=float)
 
     for idx, j in enumerate(j_values):
@@ -191,12 +191,12 @@ def simulate_fastsketch_lsh_curve(
                 set_size=set_size,
                 start_id=start_id,
             )
-            digest_a = sketcher.sketch(seq_a)[:lsh_num_perm]
-            digest_b = sketcher.sketch(seq_b)[:lsh_num_perm]
+            digest_a = sketcher(seq_a)[:lsh_num_perm]
+            digest_b = sketcher(seq_b)[:lsh_num_perm]
 
             lsh = LSH(num_perm=lsh_num_perm, num_bands=num_bands)
-            lsh.build_from_batch([digest_a])
-            candidates = lsh.query_candidates(digest_b)
+            lsh.insert([digest_a])
+            candidates = lsh.query(digest_b)
             if 0 in candidates:
                 hits += 1
         rates[idx] = hits / trials
@@ -248,7 +248,7 @@ def simulate_fastsketch_accept_curve(
     Simulate FastSketch acceptance probability:
         Pr[estimate_jaccard(sketch(A), sketch(B)) >= theta].
     """
-    sketcher = FastSimilaritySketch(sketch_size=sketch_size, seed=seed)
+    sketcher = FastSimilaritySketch(size=sketch_size, seed=seed)
     probs = np.zeros_like(j_values, dtype=float)
 
     for idx, j in enumerate(j_values):
@@ -265,8 +265,8 @@ def simulate_fastsketch_accept_curve(
                 set_size=set_size,
                 start_id=start_id,
             )
-            digest_a = sketcher.sketch(seq_a)
-            digest_b = sketcher.sketch(seq_b)
+            digest_a = sketcher(seq_a)
+            digest_b = sketcher(seq_b)
             est = estimate_jaccard_from_sketch(digest_a, digest_b)
             if est >= theta:
                 accepted += 1

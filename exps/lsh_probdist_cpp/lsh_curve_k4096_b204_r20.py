@@ -98,7 +98,7 @@ def simulate_collision_curve(
     Space Complexity:
         O(NUM_PERM_LSH)
     """
-    sketcher = FastSimilaritySketch(sketch_size=K_SKETCH, seed=SEED)
+    sketcher = FastSimilaritySketch(size=K_SKETCH, seed=SEED)
     rates = np.zeros_like(j_values, dtype=float)
 
     for idx, j in enumerate(j_values):
@@ -108,12 +108,12 @@ def simulate_collision_curve(
         for trial_id in range(trials):
             start_id = trial_id * 10000 + idx * 1000000
             seq_a, seq_b = generate_interval_lists_with_jaccard(float(j), set_size, start_id)
-            digest_a = sketcher.sketch(seq_a)[:NUM_PERM_LSH]
-            digest_b = sketcher.sketch(seq_b)[:NUM_PERM_LSH]
+            digest_a = sketcher(seq_a)[:NUM_PERM_LSH]
+            digest_b = sketcher(seq_b)[:NUM_PERM_LSH]
 
             lsh = LSH(num_perm=NUM_PERM_LSH, num_bands=BANDS)
-            lsh.build_from_batch([digest_a])
-            candidates = lsh.query_candidates(digest_b)
+            lsh.insert([digest_a])
+            candidates = lsh.query(digest_b)
             if 0 in candidates:
                 hits += 1
         rates[idx] = hits / trials

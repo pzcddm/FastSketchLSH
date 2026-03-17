@@ -46,9 +46,9 @@ class TestPrehashedConsistency(unittest.TestCase):
 
         manual_hashes = np.array([hash_int32_py(int(v)) for v in tokens], dtype=np.uint64)
 
-        sketcher = FastSimilaritySketch(sketch_size=128, seed=77787)
-        expected = sketcher.sketch(tokens)
-        actual = sketcher.sketch_prehashed(manual_hashes)
+        sketcher = FastSimilaritySketch(size=128, seed=77787)
+        expected = sketcher(tokens)
+        actual = sketcher(manual_hashes, prehashed=True)
 
         self.assertEqual(expected, actual)
 

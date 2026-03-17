@@ -65,7 +65,7 @@ class SketchComparison:
             (sketch, elapsed_seconds)
         """
         start_time = time.perf_counter()
-        sketch = sketcher.sketch(items)
+        sketch = sketcher(items)
         end_time = time.perf_counter()
         return sketch, (end_time - start_time)
 
@@ -106,7 +106,7 @@ class SketchComparison:
             str_b = [str(x) for x in int_b]
 
             # Test FastSimilaritySketch (SIMD expects integers)
-            fast_sketcher = FastSimilaritySketch(sketch_size=k)
+            fast_sketcher = FastSimilaritySketch(size=k)
 
             # sketch_a, time_a = self.time_sketch_generation(fast_sketcher, int_a)
             # sketch_b, time_b = self.time_sketch_generation(fast_sketcher, int_b)

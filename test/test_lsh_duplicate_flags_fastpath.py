@@ -31,8 +31,8 @@ def expected_flags_from_csr(
 
 class TestLSHDuplicateFlagsFastPath(unittest.TestCase):
     def _make_sketches(self, token_sets: list[list[str]]) -> np.ndarray:
-        sketcher = FastSimilaritySketch(sketch_size=128, seed=42)
-        return np.asarray(sketcher.sketch_batch(token_sets, num_threads=1), dtype=np.uint64)
+        sketcher = FastSimilaritySketch(size=128, seed=42)
+        return np.asarray(sketcher.batch(token_sets, num_threads=1), dtype=np.uint64)
 
     def test_batch_query_duplicate_flags_matches_csr(self) -> None:
         token_sets = [
@@ -45,11 +45,11 @@ class TestLSHDuplicateFlagsFastPath(unittest.TestCase):
         sketches = self._make_sketches(token_sets)
 
         lsh = LSH(num_perm=128, num_bands=8, num_threads=1)
-        lsh.build_from_batch(sketches)
+        lsh.insert(sketches)
 
-        flat, indptr = lsh.batch_query_csr(sketches)
+        flat, indptr = lsh.query(sketches, format="csr")
         expected = expected_flags_from_csr(flat, indptr, self_id_start=0)
-        actual = np.asarray(lsh.batch_query_duplicate_flags(sketches, self_id_start=0), dtype=np.uint8)
+        actual = np.asarray(lsh.duplicates(sketches, self_start=0), dtype=np.uint8)
 
         np.testing.assert_array_equal(actual, expected)
 
@@ -68,14 +68,14 @@ class TestLSHDuplicateFlagsFastPath(unittest.TestCase):
         target_sketches = self._make_sketches(target_sets)
 
         lsh = LSH(num_perm=128, num_bands=8, num_threads=1)
-        lsh.build_from_batch(warmup_sketches)
-        lsh.build_from_batch(target_sketches)
+        lsh.insert(warmup_sketches)
+        lsh.insert(target_sketches)
 
         self_id_start = len(warmup_sets)
-        flat, indptr = lsh.batch_query_csr(target_sketches)
+        flat, indptr = lsh.query(target_sketches, format="csr")
         expected = expected_flags_from_csr(flat, indptr, self_id_start=self_id_start)
         actual = np.asarray(
-            lsh.batch_query_duplicate_flags(target_sketches, self_id_start=self_id_start),
+            lsh.duplicates(target_sketches, self_start=self_id_start),
             dtype=np.uint8,
         )
 

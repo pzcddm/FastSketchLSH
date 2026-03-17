@@ -207,9 +207,9 @@ def main() -> None:
     else:
         token_sets_str = [[str(tok).encode('utf-8') for tok in tokens] for tokens in token_sets]
         fs_minhash_start = time.perf_counter()
-        m = FastSimilaritySketch(sketch_size=num_perm, seed=42)
-        # minhashes = m.sketch_batch(token_sets_str, num_threads=0)  # np.ndarray (B, t), dtype=uint64
-        minhashes = m.sketch_batch(token_sets_str, num_threads=16)
+        m = FastSimilaritySketch(size=num_perm, seed=42)
+        # minhashes = m.batch(token_sets_str, num_threads=0)  # np.ndarray (B, t), dtype=uint64
+        minhashes = m.batch(token_sets_str, num_threads=16)
         fs_minhash_time = time.perf_counter() - fs_minhash_start
         if cli_args and getattr(cli_args, 'save_fastsketch', None):
             outp = Path(cli_args.save_fastsketch)
@@ -219,12 +219,12 @@ def main() -> None:
     # Build band LSH from batch sketches
     band_lsh = LSH(num_perm=num_perm, num_bands=bands)
     fs_build_start = time.perf_counter()
-    band_lsh.build_from_batch(minhashes)
+    band_lsh.insert(minhashes)
     fs_build_time = time.perf_counter() - fs_build_start
 
     # Query flags (batch): duplicate if bucket size per row > 1
     fs_query_start = time.perf_counter()
-    flat, indptr = band_lsh.batch_query_csr(minhashes)
+    flat, indptr = band_lsh.query(minhashes, format="csr")
     B = int(minhashes.shape[0])
     fs_band_flags = [1 if int(indptr[i + 1] - indptr[i]) > 1 else 0 for i in range(B)]
     fs_query_time = time.perf_counter() - fs_query_start
@@ -233,12 +233,12 @@ def main() -> None:
 
     # Query flags (single, NumPy-returning API): loop calling single-item API, duplicate if >1
     fs_single_query_start = time.perf_counter()
-    Minhashlsh_flags = [1 if len(band_lsh.query_candidates(m)) > 1 else 0 for m in minhashes]
+    Minhashlsh_flags = [1 if len(band_lsh.query(m)) > 1 else 0 for m in minhashes]
     fs_single_query_time = time.perf_counter() - fs_single_query_start
 
     # Query candidates (batch, list-of-lists) and time
     fs_list_batch_start = time.perf_counter()
-    lol = band_lsh.batch_query(minhashes)
+    lol = band_lsh.query(minhashes)
     # Flags derived from list-of-lists
     fs_list_flags = [1 if len(row) > 1 else 0 for row in lol]
 

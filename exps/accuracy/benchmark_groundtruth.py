@@ -482,19 +482,19 @@ def run_fastsketch_lsh_with_candidates(
     # Phase 1: Sketching
     start1 = time.perf_counter()
     token_sets_bytes = [[tok.encode('utf-8') for tok in tokens] for tokens in token_sets]
-    sketcher = FastSimilaritySketch(sketch_size=num_perm, seed=random_seed)
-    minhashes = sketcher.sketch_batch(token_sets_bytes, num_threads=os.cpu_count() or 1)
+    sketcher = FastSimilaritySketch(size=num_perm, seed=random_seed)
+    minhashes = sketcher.batch(token_sets_bytes, num_threads=os.cpu_count() or 1)
     phase1_time = time.perf_counter() - start1
 
     # Phase 2: LSH Indexing
     start2 = time.perf_counter()
     lsh = LSH(num_perm=num_perm, num_bands=bands)
-    lsh.build_from_batch(minhashes)
+    lsh.insert(minhashes)
     phase2_time = time.perf_counter() - start2
 
     # Phase 3: Querying and Deduplication
     start3 = time.perf_counter()
-    candidate_sets_list = lsh.batch_query(minhashes)
+    candidate_sets_list = lsh.query(minhashes)
     candidate_sets = [set(candidates) for candidates in candidate_sets_list]
 
     # Deduplication process
