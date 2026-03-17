@@ -204,6 +204,10 @@ public:
                                          uint64_t* out_ptr,
                                          int num_threads = 0);
 
+    // Single-row sketch from pre-hashed uint64 values.
+    // Uses this->buckets_S as scratch buffer (not thread-safe; single-thread only).
+    void sketch_one_prehashed(const uint64_t* hashes, size_t n, uint64_t* out);
+
     // Access last computed digest (for LSH Rensa compatibility)
     const std::vector<uint64_t>& digest() const noexcept { return last_digest; }
 };

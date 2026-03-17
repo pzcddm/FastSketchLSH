@@ -14,14 +14,16 @@ endif()
 # Dynamic detection of SIMD instruction sets
 option(ENABLE_NEON "Enable ARM NEON instructions (auto on arm64)" ON)
 option(ENABLE_AVX512 "Enable AVX-512 instructions (x86_64 only)" ON)
-option(FASTSKETCH_USE_FXHASH "Use FxHasher-style prehash for strings" ON)
+# Default token prehash is fxhash64 (8-byte stride, faster than fnv1a64).
+# Set FASTSKETCH_USE_FNV1A=ON to revert to fnv1a64 for compatibility.
+option(FASTSKETCH_USE_FNV1A "Use fnv1a64 prehash for strings (compatibility mode)" OFF)
 
 # Auto-disable AVX512 on non-x86 and hint NEON on arm64
 if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i.86")
     set(ENABLE_AVX512 OFF)
 endif()
-if(FASTSKETCH_USE_FXHASH)
-    add_definitions(-DFASTSKETCH_USE_FXHASH)
+if(FASTSKETCH_USE_FNV1A)
+    add_definitions(-DFASTSKETCH_USE_FNV1A)
 endif()
 
 # PyBind11 integration (optional, for Python module)

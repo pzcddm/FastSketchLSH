@@ -355,3 +355,102 @@ void LSH::query_candidates_batch(const std::uint64_t* const* rows,
         std::copy(tmp.begin(), tmp.end(), flat_out.begin() + static_cast<std::ptrdiff_t>(start));
     }
 }
+
+// Query duplicate flags for a batch of contiguous digests (row-major).
+// This avoids building candidate vectors and exits early as soon as a
+// non-self candidate is found for a row.
+void LSH::query_duplicate_flags_batch(const std::uint64_t* base,
+                                      std::size_t batch,
+                                      std::size_t t,
+                                      std::size_t query_base_id,
+                                      std::vector<std::uint8_t>& flags_out) const {
+    if (t != num_perm_) {
+        throw std::invalid_argument("t must equal num_perm");
+    }
+    flags_out.assign(batch, static_cast<std::uint8_t>(0));
+    if (batch == 0) {
+        return;
+    }
+
+    const std::size_t stride_elems = t;
+    const int threads = resolved_num_threads();
+#ifndef _OPENMP
+    (void)threads;
+#endif
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static) num_threads(threads)
+#else
+    #pragma omp parallel for schedule(static)
+#endif
+    for (std::size_t i = 0; i < batch; ++i) {
+        const std::uint64_t* digest = base + i * stride_elems;
+        const std::size_t self_id = query_base_id + i;
+        bool is_duplicate = false;
+
+        for (std::size_t b = 0; b < num_bands_ && !is_duplicate; ++b) {
+            const std::size_t offset = b * band_size_;
+            const std::uint64_t h = band_hash(digest + offset, band_size_, band_salts_[b]);
+            const auto it = tables_[b].find(h);
+            if (it == tables_[b].end()) {
+                continue;
+            }
+            const Bucket& bucket = it->second;
+            for (std::size_t id : bucket) {
+                if (id != self_id) {
+                    is_duplicate = true;
+                    break;
+                }
+            }
+        }
+
+        flags_out[i] = static_cast<std::uint8_t>(is_duplicate ? 1 : 0);
+    }
+}
+
+// Query duplicate flags for a batch of pointer-to-row digests.
+void LSH::query_duplicate_flags_batch(const std::uint64_t* const* rows,
+                                      std::size_t batch,
+                                      std::size_t t,
+                                      std::size_t query_base_id,
+                                      std::vector<std::uint8_t>& flags_out) const {
+    if (t != num_perm_) {
+        throw std::invalid_argument("t must equal num_perm");
+    }
+    flags_out.assign(batch, static_cast<std::uint8_t>(0));
+    if (batch == 0) {
+        return;
+    }
+
+    const int threads = resolved_num_threads();
+#ifndef _OPENMP
+    (void)threads;
+#endif
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static) num_threads(threads)
+#else
+    #pragma omp parallel for schedule(static)
+#endif
+    for (std::size_t i = 0; i < batch; ++i) {
+        const std::uint64_t* digest = rows[i];
+        const std::size_t self_id = query_base_id + i;
+        bool is_duplicate = false;
+
+        for (std::size_t b = 0; b < num_bands_ && !is_duplicate; ++b) {
+            const std::size_t offset = b * band_size_;
+            const std::uint64_t h = band_hash(digest + offset, band_size_, band_salts_[b]);
+            const auto it = tables_[b].find(h);
+            if (it == tables_[b].end()) {
+                continue;
+            }
+            const Bucket& bucket = it->second;
+            for (std::size_t id : bucket) {
+                if (id != self_id) {
+                    is_duplicate = true;
+                    break;
+                }
+            }
+        }
+
+        flags_out[i] = static_cast<std::uint8_t>(is_duplicate ? 1 : 0);
+    }
+}

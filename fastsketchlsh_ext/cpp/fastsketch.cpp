@@ -417,10 +417,10 @@ vector<uint64_t> FastSimilaritySketch::sketch(const vector<string>& bytes,
     uint64_t* base_ptr = base_buffer.data();
     for (int j = 0; j < n; ++j) {
         const string& s = bytes[j];
-#if defined(FASTSKETCH_USE_FXHASH)
-        base_ptr[j] = fxhash64(reinterpret_cast<const uint8_t*>(s.data()), s.size());
-#else
+#if defined(FASTSKETCH_USE_FNV1A)
         base_ptr[j] = fnv1a64(reinterpret_cast<const uint8_t*>(s.data()), s.size());
+#else
+        base_ptr[j] = fxhash64(reinterpret_cast<const uint8_t*>(s.data()), s.size());
 #endif
     }
     auto t1 = std::chrono::high_resolution_clock::now();
@@ -508,10 +508,10 @@ vector<uint64_t> FastSimilaritySketch::sketch_utf8_views(const uint8_t* const* p
     if (base_buffer.size() < n) base_buffer.resize(n);
     uint64_t* base_ptr = base_buffer.data();
     for (size_t j = 0; j < n; ++j) {
-#if defined(FASTSKETCH_USE_FXHASH)
-        base_ptr[j] = fxhash64(ptrs[j], lengths[j]);
-#else
+#if defined(FASTSKETCH_USE_FNV1A)
         base_ptr[j] = fnv1a64(ptrs[j], lengths[j]);
+#else
+        base_ptr[j] = fxhash64(ptrs[j], lengths[j]);
 #endif
     }
 
@@ -829,10 +829,10 @@ void FastSimilaritySketch::sketch_batch_flat_bytes(const uint8_t* const* ptrs,
             uint64_t* base_ptr = worker.base_buffer.data();
             size_t pos = 0;
             for (uint64_t j = start; j < end; ++j, ++pos) {
-#if defined(FASTSKETCH_USE_FXHASH)
-                base_ptr[pos] = fxhash64(ptrs[j], lengths[j]);
-#else
+#if defined(FASTSKETCH_USE_FNV1A)
                 base_ptr[pos] = fnv1a64(ptrs[j], lengths[j]);
+#else
+                base_ptr[pos] = fxhash64(ptrs[j], lengths[j]);
 #endif
             }
             std::memset(worker.buckets_S.data(), 0xFF, static_cast<size_t>(t) * sizeof(uint64_t));
@@ -903,10 +903,10 @@ void FastSimilaritySketch::sketch_batch_flat_bytes(const uint8_t* const* ptrs,
         uint64_t* base_ptr = worker.base_buffer.data();
         size_t pos = 0;
         for (uint64_t j = start; j < end; ++j, ++pos) {
-#if defined(FASTSKETCH_USE_FXHASH)
-            base_ptr[pos] = fxhash64(ptrs[j], lengths[j]);
-#else
+#if defined(FASTSKETCH_USE_FNV1A)
             base_ptr[pos] = fnv1a64(ptrs[j], lengths[j]);
+#else
+            base_ptr[pos] = fxhash64(ptrs[j], lengths[j]);
 #endif
         }
         std::memset(worker.buckets_S.data(), 0xFF, static_cast<size_t>(t) * sizeof(uint64_t));
@@ -944,6 +944,75 @@ void FastSimilaritySketch::sketch_batch_flat_bytes(const uint8_t* const* ptrs,
 #endif
 }
 
+// Helper: run the sketch kernel on an array of already-hashed uint64 values.
+// Reads directly from base_ptr (no memcpy), writes result directly to out.
+// This is the same kernel as sketch_prehashed but without the input memcpy and
+// without the last_digest indirection, so it fits the inlined batch patterns.
+static void sketch_kernel_direct(const uint64_t* base_ptr, int nn,
+                                 const std::vector<uint64_t>& seeds,
+                                 int t, uint64_t t_mask,
+                                 std::vector<uint64_t>& buckets_S,
+                                 uint64_t* out) {
+    std::memset(buckets_S.data(), 0xFF, static_cast<size_t>(t) * sizeof(uint64_t));
+    for (int i = 0; i < t; ++i) {
+        const uint64_t seed_i = seeds[i];
+        int j = 0;
+#if defined(FASTHASH_SIMD_AVX512)
+        for (; j + 16 <= nn; j += 16) {
+            round1_block_avx512_optimized(base_ptr + j, 8, (uint64_t)i, seed_i, buckets_S.data(), t_mask);
+            round1_block_avx512_optimized(base_ptr + j + 8, 8, (uint64_t)i, seed_i, buckets_S.data(), t_mask);
+        }
+        for (; j + 8 <= nn; j += 8) {
+            round1_block_avx512_optimized(base_ptr + j, 8, (uint64_t)i, seed_i, buckets_S.data(), t_mask);
+        }
+        if (j < nn) {
+            round1_block_avx512_optimized(base_ptr + j, nn - j, (uint64_t)i, seed_i, buckets_S.data(), t_mask);
+        }
+#else
+        for (; j + 16 <= nn; j += 16) {
+            round1_block_fallback(base_ptr + j, 8, (uint64_t)i, seed_i, buckets_S.data(), t_mask);
+            round1_block_fallback(base_ptr + j + 8, 8, (uint64_t)i, seed_i, buckets_S.data(), t_mask);
+        }
+        for (; j + 8 <= nn; j += 8) {
+            round1_block_fallback(base_ptr + j, 8, (uint64_t)i, seed_i, buckets_S.data(), t_mask);
+        }
+        if (j < nn) {
+            round1_block_fallback(base_ptr + j, nn - j, (uint64_t)i, seed_i, buckets_S.data(), t_mask);
+        }
+#endif
+        if (all_filled_avx512(buckets_S.data(), t)) break;
+    }
+    if (!all_filled_avx512(buckets_S.data(), t)) {
+        for (int i = t; i < 2 * t; ++i) {
+            const int b = i - t;
+            if (buckets_S[b] != INF_KEY()) continue;
+            const uint64_t seed_i = seeds[i];
+            uint64_t min_h = ~0ull;
+            int j = 0;
+#if defined(FASTHASH_SIMD_AVX512)
+            for (; j + 8 <= nn; j += 8) {
+                __m512i x = _mm512_loadu_si512((const void*)(base_ptr + j));
+                x = _mm512_xor_si512(x, _mm512_set1_epi64((long long)seed_i));
+                __m512i h = splitmix64_vec(x);
+                uint64_t block_min = hmin_epu64_8(h);
+                if (block_min < min_h) min_h = block_min;
+            }
+#endif
+            for (; j < nn; ++j) {
+                uint64_t h = splitmix64(base_ptr[j] ^ seed_i);
+                if (h < min_h) min_h = h;
+            }
+            const uint64_t key = pack_key((uint64_t)i, min_h);
+            if (key < buckets_S[b]) buckets_S[b] = key;
+        }
+    }
+    std::memcpy(out, buckets_S.data(), static_cast<size_t>(t) * sizeof(uint64_t));
+}
+
+void FastSimilaritySketch::sketch_one_prehashed(const uint64_t* hashes, size_t n, uint64_t* out) {
+    sketch_kernel_direct(hashes, static_cast<int>(n), seeds, t, t_mask, buckets_S, out);
+}
+
 void FastSimilaritySketch::sketch_batch_flat_csr_prehashed(const uint64_t* data,
                                                            const uint64_t* indptr,
                                                            size_t B,
@@ -951,31 +1020,38 @@ void FastSimilaritySketch::sketch_batch_flat_csr_prehashed(const uint64_t* data,
                                                            int num_threads) {
 #if defined(_OPENMP)
     const int threads = (num_threads > 0) ? num_threads : omp_get_max_threads();
-    #pragma omp parallel num_threads(threads)
-    {
-        FastSimilaritySketch worker(this->t, this->seeds);
-        #pragma omp for schedule(static)
-        for (long i = 0; i < static_cast<long>(B); ++i) {
+    // When only 1 thread is requested, skip the OMP parallel region entirely
+    // to avoid team creation, worker copy, and barrier overhead.
+    if (threads > 1) {
+        #pragma omp parallel num_threads(threads)
+        {
+            FastSimilaritySketch worker(this->t, this->seeds);
+            #pragma omp for schedule(static)
+            for (long i = 0; i < static_cast<long>(B); ++i) {
+                const uint64_t start = indptr[i];
+                const uint64_t end   = indptr[i + 1];
+                const int n = static_cast<int>(end - start);
+                sketch_kernel_direct(data + start, n, worker.seeds, worker.t, worker.t_mask,
+                                     worker.buckets_S, out_ptr + static_cast<size_t>(i) * static_cast<size_t>(t));
+            }
+        }
+    } else {
+        for (size_t i = 0; i < B; ++i) {
             const uint64_t start = indptr[i];
-            const uint64_t end   = indptr[i+1];
-            const size_t n = static_cast<size_t>(end - start);
-            (void)worker.sketch_prehashed(data + start, n);
-            const vector<uint64_t>& S = worker.digest();
-            std::memcpy(out_ptr + static_cast<size_t>(i) * static_cast<size_t>(t),
-                        S.data(),
-                        static_cast<size_t>(t) * sizeof(uint64_t));
+            const uint64_t end   = indptr[i + 1];
+            const int n = static_cast<int>(end - start);
+            sketch_kernel_direct(data + start, n, seeds, t, t_mask,
+                                 buckets_S, out_ptr + i * static_cast<size_t>(t));
         }
     }
 #else
     (void)num_threads;
-    FastSimilaritySketch worker(this->t, this->seeds);
     for (size_t i = 0; i < B; ++i) {
         const uint64_t start = indptr[i];
-        const uint64_t end   = indptr[i+1];
-        const size_t n = static_cast<size_t>(end - start);
-        (void)worker.sketch_prehashed(data + start, n);
-        const vector<uint64_t>& S = worker.digest();
-        std::memcpy(out_ptr + i * static_cast<size_t>(t), S.data(), static_cast<size_t>(t) * sizeof(uint64_t));
+        const uint64_t end   = indptr[i + 1];
+        const int n = static_cast<int>(end - start);
+        sketch_kernel_direct(data + start, n, seeds, t, t_mask,
+                             buckets_S, out_ptr + i * static_cast<size_t>(t));
     }
 #endif
 }

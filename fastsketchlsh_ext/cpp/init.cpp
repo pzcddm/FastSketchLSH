@@ -527,7 +527,97 @@ PYBIND11_MODULE(FastSketchLSH, m) {
                const bool is_str_data = PyUnicode_CheckExact(first_item);
                const bool is_bytes_data = PyBytes_CheckExact(first_item);
                Py_DECREF(first_seq);
-               
+
+               // ── FAST PATH: list[list[str]] chunked fused hash+sketch ────────────────
+               // Single-thread only: fuse hashing under GIL with sketch kernel per chunk.
+               // Multi-thread: fall through to the ptrs/lengths path so that
+               // sketch_batch_flat_bytes can parallelize BOTH hashing and sketching
+               // across all OpenMP threads (the GIL-held ptr extraction is very cheap).
+               if (is_str_data && (num_threads == 1)) {
+                   bool all_lists = true;
+                   for (size_t _ci = 0; _ci < B && all_lists; ++_ci)
+                       all_lists = PyList_Check(batches[_ci].ptr());
+                   if (all_lists) {
+                       static const size_t CHUNK = 128;
+                       std::unique_ptr<uint64_t[]> flat(new uint64_t[B * t]);
+                       // chunk_hashes: hash CSR for one chunk; fits in L2 cache
+                       std::vector<uint64_t> chunk_hashes;
+                       chunk_hashes.reserve(CHUNK * 512);
+                       std::vector<uint64_t> chunk_indptr(CHUNK + 1);
+                       bool had_error = false;
+                       for (size_t cs = 0; cs < B && !had_error; cs += CHUNK) {
+                           const size_t ce  = std::min(cs + CHUNK, B);
+                           const size_t csz = ce - cs;
+                           // Pass 1 (GIL held): count tokens per row in chunk
+                           chunk_indptr[0] = 0;
+                           size_t ctotal = 0;
+                           for (size_t i = 0; i < csz; ++i) {
+                               ctotal += static_cast<size_t>(
+                                   PyList_GET_SIZE(batches[cs + i].ptr()));
+                               chunk_indptr[i + 1] = static_cast<uint64_t>(ctotal);
+                           }
+                           if (chunk_hashes.size() < ctotal)
+                               chunk_hashes.resize(ctotal);
+                           // Pass 2 (GIL held): fxhash inline while string is in cache
+                           size_t pos = 0;
+                           for (size_t i = 0; i < csz && !had_error; ++i) {
+                               PyObject* inner = batches[cs + i].ptr();
+                               const Py_ssize_t n = PyList_GET_SIZE(inner);
+                               for (Py_ssize_t j = 0; j < n; ++j) {
+                                   PyObject* str_obj = PyList_GET_ITEM(inner, j);
+                                   if (PyUnicode_IS_ASCII(str_obj)) {
+                                       const uint8_t* p = reinterpret_cast<const uint8_t*>(
+                                           PyUnicode_1BYTE_DATA(str_obj));
+                                       const size_t l = static_cast<size_t>(
+                                           PyUnicode_GET_LENGTH(str_obj));
+#if defined(FASTSKETCH_USE_FNV1A)
+                                       chunk_hashes[pos++] = fnv1a64(p, l);
+#else
+                                       chunk_hashes[pos++] = fxhash64(p, l);
+#endif
+                                   } else {
+                                       Py_ssize_t sz = 0;
+                                       const char* s = PyUnicode_AsUTF8AndSize(str_obj, &sz);
+                                       if (!s) { had_error = true; break; }
+#if defined(FASTSKETCH_USE_FNV1A)
+                                       chunk_hashes[pos++] = fnv1a64(
+                                           reinterpret_cast<const uint8_t*>(s),
+                                           static_cast<size_t>(sz));
+#else
+                                       chunk_hashes[pos++] = fxhash64(
+                                           reinterpret_cast<const uint8_t*>(s),
+                                           static_cast<size_t>(sz));
+#endif
+                                   }
+                               }
+                           }
+                           if (had_error) break;
+                           // Pass 3 (GIL released): sketch kernels for this chunk
+                           // Uses the CSR prehashed batch kernel which respects num_threads
+                           // (OpenMP parallel when threads>1, serial bypass when threads==1).
+                           {
+                               py::gil_scoped_release release;
+                               uint64_t* chunk_out = flat.get() + cs * t;
+                               self.sketch_batch_flat_csr_prehashed(
+                                   chunk_hashes.data(), chunk_indptr.data(),
+                                   csz, chunk_out, num_threads);
+                           }
+                       }
+                       if (had_error) throw py::error_already_set();
+                       uint64_t* raw = flat.release();
+                       py::capsule owner(raw, [](void* f){
+                           delete[] reinterpret_cast<uint64_t*>(f);
+                       });
+                       return py::array(
+                           py::dtype::of<uint64_t>(),
+                           std::vector<ssize_t>{(ssize_t)B, (ssize_t)t},
+                           std::vector<ssize_t>{(ssize_t)(t * sizeof(uint64_t)),
+                                                (ssize_t)sizeof(uint64_t)},
+                           raw, owner);
+                   }
+                   // else: fall through — handles tuples/sets via PySequence_Fast
+               }
+
                // Single pass: keep sequences alive, count items, and process
                std::vector<PyObject*> sequences; sequences.reserve(B);
                std::vector<uint64_t> indptr; indptr.reserve(B + 1); indptr.push_back(0);
@@ -931,6 +1021,87 @@ PYBIND11_MODULE(FastSketchLSH, m) {
            );
       }, py::arg("data"), py::arg("indptr"), py::arg("num_threads") = 0,
          "CSR batch for pre-hashed uint64 data: data(np.uint64), indptr(np.uint64 length B+1) -> np.ndarray (B,t)")
+
+      // ===================== Fused str-list batch path =====================
+      // sketch_batch_str_lists: optimized for list[list[str]] input.
+      // Unlike sketch_batch (which builds a 50M-entry ptr/len array then hashes in C++),
+      // this path hashes tokens inline during Python traversal → one flat base_data[] buffer.
+      // Eliminates two intermediate array passes (ptrs[], lengths[]) for ~30-50% prehash speedup.
+      .def("sketch_batch_str_lists",
+           [](FastSimilaritySketch& self, py::object batches_obj, int num_threads) -> py::object {
+               PyObject* outer = batches_obj.ptr();
+               if (!PyList_Check(outer))
+                   throw py::type_error("sketch_batch_str_lists: batches must be a list");
+
+               const Py_ssize_t B_s = PyList_GET_SIZE(outer);
+               if (B_s == 0) throw py::value_error("batches cannot be empty");
+               const size_t B = static_cast<size_t>(B_s);
+               const size_t t = static_cast<size_t>(self.t);
+
+               // Pass 1: count total tokens (cheap; only reads list sizes)
+               std::unique_ptr<uint64_t[]> indptr(new uint64_t[B + 1]);
+               indptr[0] = 0;
+               for (size_t i = 0; i < B; ++i) {
+                   PyObject* inner = PyList_GET_ITEM(outer, i);
+                   if (!PyList_Check(inner))
+                       throw py::type_error("sketch_batch_str_lists: each element must be a list of str");
+                   indptr[i + 1] = indptr[i] + static_cast<uint64_t>(PyList_GET_SIZE(inner));
+               }
+               const size_t total = static_cast<size_t>(indptr[B]);
+
+               // Pass 2: hash each token directly into the flat base_data buffer.
+               // No intermediate ptrs[]/lengths[] arrays — saves two large allocations and passes.
+               std::unique_ptr<uint64_t[]> base_data(new uint64_t[total == 0 ? 1 : total]);
+               uint64_t* bd = base_data.get();
+               size_t pos = 0;
+
+               for (size_t i = 0; i < B; ++i) {
+                   PyObject* inner = PyList_GET_ITEM(outer, i);
+                   const Py_ssize_t n = PyList_GET_SIZE(inner);
+                   for (Py_ssize_t j = 0; j < n; ++j) {
+                       PyObject* s = PyList_GET_ITEM(inner, j);
+                       if (PyUnicode_IS_ASCII(s)) {
+                           const uint8_t* p = reinterpret_cast<const uint8_t*>(PyUnicode_1BYTE_DATA(s));
+                           const size_t   sz = static_cast<size_t>(PyUnicode_GET_LENGTH(s));
+#if defined(FASTSKETCH_USE_FNV1A)
+                           bd[pos] = fnv1a64(p, sz);
+#else
+                           bd[pos] = fxhash64(p, sz);
+#endif
+                       } else {
+                           Py_ssize_t sz = 0;
+                           const char* p = PyUnicode_AsUTF8AndSize(s, &sz);
+                           if (!p) throw py::error_already_set();
+#if defined(FASTSKETCH_USE_FNV1A)
+                           bd[pos] = fnv1a64(reinterpret_cast<const uint8_t*>(p), static_cast<size_t>(sz));
+#else
+                           bd[pos] = fxhash64(reinterpret_cast<const uint8_t*>(p), static_cast<size_t>(sz));
+#endif
+                       }
+                       ++pos;
+                   }
+               }
+
+               // Run sketch kernel with GIL released (prehashed CSR path)
+               std::unique_ptr<uint64_t[]> flat_out(new uint64_t[B * t]);
+               {
+                   py::gil_scoped_release release;
+                   self.sketch_batch_flat_csr_prehashed(bd, indptr.get(), B, flat_out.get(), num_threads);
+               }
+
+               uint64_t* raw = flat_out.release();
+               py::capsule owner(raw, [](void* f) { delete[] reinterpret_cast<uint64_t*>(f); });
+               return py::array(
+                   py::dtype::of<uint64_t>(),
+                   std::vector<ssize_t>{(ssize_t)B, (ssize_t)t},
+                   std::vector<ssize_t>{(ssize_t)(t * sizeof(uint64_t)), (ssize_t)sizeof(uint64_t)},
+                   raw, owner);
+           },
+           py::arg("batches"), py::arg("num_threads") = 0,
+           "Optimised sketch for list[list[str]] input.\n"
+           "Hashes tokens inline (no intermediate ptr/len arrays) then runs the\n"
+           "prehashed CSR kernel under GIL release. ~30-50% faster than sketch_batch\n"
+           "for string workloads. Requires a plain list[list[str]].")
  ;
 
     
@@ -1171,6 +1342,38 @@ PYBIND11_MODULE(FastSketchLSH, m) {
            return py::make_tuple(flat_arr, indptr_arr);
        }, py::arg("ndarray"),
           "Batch query returning (flat uint64 array, indptr uint64 array)")
+
+      // Batch duplicate flags: return uint8 flags for ndarray (B,t) without
+      // constructing candidate CSR buffers.
+      .def("batch_query_duplicate_flags", [](const LSH& self,
+                                             py::array_t<std::uint64_t, py::array::c_style | py::array::forcecast> arr,
+                                             std::uint64_t self_id_start) {
+           py::buffer_info bi = arr.request();
+           if (bi.ndim != 2) throw py::value_error("Input must be 2D (B,t) uint64 array");
+           const std::size_t B = static_cast<std::size_t>(bi.shape[0]);
+           const std::size_t t = static_cast<std::size_t>(bi.shape[1]);
+           const std::uint64_t* base = static_cast<const std::uint64_t*>(bi.ptr);
+
+           std::vector<std::uint8_t> flags;
+           {
+               py::gil_scoped_release release;
+               self.query_duplicate_flags_batch(
+                   base,
+                   B,
+                   t,
+                   static_cast<std::size_t>(self_id_start),
+                   flags
+               );
+           }
+
+           py::array_t<std::uint8_t> out(static_cast<py::ssize_t>(B));
+           auto out_view = out.mutable_unchecked<1>();
+           for (std::size_t i = 0; i < B; ++i) {
+               out_view(static_cast<py::ssize_t>(i)) = flags[i];
+           }
+           return out;
+       }, py::arg("ndarray"), py::arg("self_id_start") = 0,
+          "Batch query returning duplicate flags as uint8 for self-query batches")
 
       // Batch query: return Python list-of-lists of candidates for ndarray (B,t)
       .def("batch_query", [](const LSH& self,

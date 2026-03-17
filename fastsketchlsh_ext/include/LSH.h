@@ -78,6 +78,24 @@ public:
                                 std::vector<std::size_t>& flat_out,
                                 std::vector<std::uint64_t>& indptr_out) const;
 
+    // Batch duplicate-flag query for contiguous rows. This fast path avoids
+    // candidate materialization and returns one flag per row.
+    //
+    // A row is flagged as duplicate when at least one candidate ID differs
+    // from its expected self ID (query_base_id + row_index).
+    void query_duplicate_flags_batch(const std::uint64_t* base,
+                                     std::size_t batch,
+                                     std::size_t t,
+                                     std::size_t query_base_id,
+                                     std::vector<std::uint8_t>& flags_out) const;
+
+    // Same as above for pointer-to-row input.
+    void query_duplicate_flags_batch(const std::uint64_t* const* rows,
+                                     std::size_t batch,
+                                     std::size_t t,
+                                     std::size_t query_base_id,
+                                     std::vector<std::uint8_t>& flags_out) const;
+
     // Getters
     inline std::size_t num_perm() const noexcept { return num_perm_; }
     inline std::size_t num_bands() const noexcept { return num_bands_; }

@@ -31,9 +31,10 @@ define_macros = [
     ('PYBIND11_STRICT_ASSERTS', '1'),
 ]
 
-# Enable FxHasher prehash if requested via environment variable
-if os.getenv('FASTSKETCH_USE_FXHASH') in {"1", "ON", "on", "true", "TRUE", "Yes", "yes"}:
-    define_macros.append(('FASTSKETCH_USE_FXHASH', '1'))
+# Default token prehash is fxhash64 (8-byte stride, faster than fnv1a64).
+# Set FASTSKETCH_USE_FNV1A=1 to revert to the old fnv1a64 for compatibility.
+if os.getenv('FASTSKETCH_USE_FNV1A') in {"1", "ON", "on", "true", "TRUE", "Yes", "yes"}:
+    define_macros.append(('FASTSKETCH_USE_FNV1A', '1'))
 
 system_name = platform.system()
 
