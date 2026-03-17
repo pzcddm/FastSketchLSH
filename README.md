@@ -26,6 +26,7 @@ v1.0.0 keeps the same native kernels but simplifies the public Python API and ad
 - New: `insert_and_query_duplicates(...)` for fused LSH build + duplicate flagging
 
 The full upgrade record lives in [`docs/release-notes-v0.2.0-to-v1.0.0.md`](docs/release-notes-v0.2.0-to-v1.0.0.md).
+For method-by-method usage examples and input/return-shape details, see [`docs/api-usage.md`](docs/api-usage.md).
 
 Pre-hashed inputs are still supported; they are now exposed through the unified `prehashed=True` flag:
 
