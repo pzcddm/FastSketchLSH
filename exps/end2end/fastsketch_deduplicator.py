@@ -87,6 +87,16 @@ class FastSketchDeduplicator(Deduplicator):
 
     def deduplicate(self, sketches: np.ndarray) -> dict[str, List[int]]:
         self._lsh = self._new_lsh()
+        # The true one-shot path is row-serial today, so prefer it for the
+        # single-thread benchmark where it removes the second full LSH pass.
+        if self.lsh_threads == 1 and hasattr(self._lsh, "insert_and_query_duplicates"):
+            build_start = time.perf_counter()
+            flag_bytes = self._lsh.insert_and_query_duplicates(sketches)
+            self.timings["build"] = time.perf_counter() - build_start
+            self.timings["query"] = 0.0
+            flags = np.asarray(flag_bytes, dtype=np.uint8).tolist()
+            return {"query": flags}
+
         build_start = time.perf_counter()
         self._lsh.insert(sketches)
         self.timings["build"] = time.perf_counter() - build_start

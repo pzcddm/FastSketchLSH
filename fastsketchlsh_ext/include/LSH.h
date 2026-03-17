@@ -96,6 +96,24 @@ public:
                                      std::size_t query_base_id,
                                      std::vector<std::uint8_t>& flags_out) const;
 
+    // Batch one-shot insert + duplicate-flag query for contiguous rows.
+    //
+    // This appends the batch to the current index while returning duplicate
+    // flags for the inserted rows. The returned flags match the semantics of
+    // building first and then calling query_duplicate_flags_batch on the same
+    // batch: if row i collides with a later row j in the same batch, both i
+    // and j are flagged.
+    void insert_and_query_duplicate_flags_batch(const std::uint64_t* base,
+                                                std::size_t batch,
+                                                std::size_t t,
+                                                std::vector<std::uint8_t>& flags_out);
+
+    // Same as above for pointer-to-row input.
+    void insert_and_query_duplicate_flags_batch(const std::uint64_t* const* rows,
+                                                std::size_t batch,
+                                                std::size_t t,
+                                                std::vector<std::uint8_t>& flags_out);
+
     // Getters
     inline std::size_t num_perm() const noexcept { return num_perm_; }
     inline std::size_t num_bands() const noexcept { return num_bands_; }

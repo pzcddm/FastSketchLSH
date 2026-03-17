@@ -31,7 +31,10 @@ def expected_flags_from_csr(
 
 class TestLSHDuplicateFlagsFastPath(unittest.TestCase):
     def _make_sketches(self, token_sets: list[list[str]]) -> np.ndarray:
-        sketcher = FastSimilaritySketch(size=128, seed=42)
+        try:
+            sketcher = FastSimilaritySketch(size=128, seed=42)
+        except TypeError:
+            sketcher = FastSimilaritySketch(sketch_size=128, seed=42)
         return np.asarray(sketcher.batch(token_sets, num_threads=1), dtype=np.uint64)
 
     def test_batch_query_duplicate_flags_matches_csr(self) -> None:
@@ -78,6 +81,54 @@ class TestLSHDuplicateFlagsFastPath(unittest.TestCase):
             lsh.duplicates(target_sketches, self_start=self_id_start),
             dtype=np.uint8,
         )
+
+        np.testing.assert_array_equal(actual, expected)
+
+    def test_insert_and_query_duplicates_matches_full_self_query(self) -> None:
+        token_sets = [
+            ["a", "b", "c", "d"],
+            ["a", "b", "c", "d"],
+            ["x", "y", "z"],
+            ["x", "y", "z"],
+            ["unique", "tokens", "here"],
+        ]
+        sketches = self._make_sketches(token_sets)
+
+        baseline = LSH(num_perm=128, num_bands=8, num_threads=1)
+        baseline.insert(sketches)
+        expected = np.asarray(baseline.duplicates(sketches, self_start=0), dtype=np.uint8)
+
+        one_shot = LSH(num_perm=128, num_bands=8, num_threads=1)
+        actual = np.asarray(one_shot.insert_and_query_duplicates(sketches), dtype=np.uint8)
+
+        np.testing.assert_array_equal(actual, expected)
+
+    def test_insert_and_query_duplicates_matches_prefilled_index(self) -> None:
+        warmup_sets = [
+            ["prefix", "one"],
+            ["prefix", "two"],
+        ]
+        target_sets = [
+            ["cat", "dog", "mouse"],
+            ["cat", "dog", "mouse"],
+            ["tree", "river", "mountain"],
+            ["tree", "river", "mountain"],
+        ]
+
+        warmup_sketches = self._make_sketches(warmup_sets)
+        target_sketches = self._make_sketches(target_sets)
+
+        baseline = LSH(num_perm=128, num_bands=8, num_threads=1)
+        baseline.insert(warmup_sketches)
+        baseline.insert(target_sketches)
+        expected = np.asarray(
+            baseline.duplicates(target_sketches, self_start=len(warmup_sets)),
+            dtype=np.uint8,
+        )
+
+        one_shot = LSH(num_perm=128, num_bands=8, num_threads=1)
+        one_shot.insert(warmup_sketches)
+        actual = np.asarray(one_shot.insert_and_query_duplicates(target_sketches), dtype=np.uint8)
 
         np.testing.assert_array_equal(actual, expected)
 

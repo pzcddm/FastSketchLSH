@@ -10,6 +10,13 @@ Fixed parameters: `bands=8, rows=16, num_perm=128, threshold=0.8`.
 
 All datasets measured on AMD EPYC 7352 (x86_64, 200 GB) with Rensa 0.4.0. See `docs/books3-server-experiment-guide.md` for server setup.
 
+Note on the current code path:
+
+- The benchmark tables below were collected before FastSketch's true LSH one-shot path landed.
+- Current FastSketch code uses `insert_and_query_duplicates(...)` when `threads=1`, which fuses LSH build and duplicate-flagging into one pass.
+- `threads>1` still uses the older `insert(...)` + `duplicates(...)` path because the current one-shot implementation is row-serial.
+- Re-run medians on the target machine before treating the single-thread build/query rows below as the new baseline.
+
 ### Single-Thread (`threads=1`)
 
 | Dataset | Engine | Sketch (s) | Build (s) | Query (s) | Total (s) | Sketch Speedup | Total Speedup |
@@ -41,7 +48,25 @@ All datasets measured on AMD EPYC 7352 (x86_64, 200 GB) with Rensa 0.4.0. See `d
 | SHUYUEJ | 1.57x | 1.29x | 1.28x | 1.20x |
 | BOOKS3 | 2.44x | 2.44x | 1.73x | 1.73x |
 
-FastSketchLSH sketch is **1.1–2.4x faster** than Rensa across all configurations. End-to-end total speedup ranges from **1.2–2.4x** on datasets where sketching dominates (SHUYUEJ, BOOKS3). On PINECONE at single-thread, FastSketchLSH's higher build+query overhead (0.53s vs 0.06s) offsets the sketch advantage — switching to 8 threads recovers the lead (0.91s vs 1.13s total).
+In the AMD server snapshot above, FastSketchLSH sketch is **1.1–2.4x faster** than Rensa across all configurations. End-to-end total speedup ranges from **1.2–2.4x** on datasets where sketching dominates (SHUYUEJ, BOOKS3). On PINECONE at single-thread, the pre-one-shot FastSketch build+query overhead (0.53s vs 0.06s) offsets the sketch advantage; the current code is expected to improve this case because `threads=1` now uses true LSH one-shot duplicate flagging.
+
+### Latest Local Validation After True One-Shot
+
+This is a local Apple Silicon rerun used to validate the new code path, not a replacement for the AMD EPYC tables above.
+
+| Dataset | threads | FastSketch Sketch (s) | FastSketch Build (s) | FastSketch Query (s) | FastSketch Total (s) | Rensa Total (s) | Total Speedup |
+|---------|---------|-----------------------|----------------------|----------------------|----------------------|-----------------|---------------|
+| PINECONE | 1 | 0.500 | 0.082 | 0.000 | 0.582 | 0.891 | **1.53x** |
+| PINECONE | 8 | 0.162 | 0.021 | 0.007 | 0.190 | 0.319 | **1.68x** |
+| SHUYUEJ | 1 | 0.364 | 0.021 | 0.000 | 0.385 | 0.910 | **2.37x** |
+| SHUYUEJ | 8 | 0.121 | 0.007 | 0.002 | 0.130 | 0.325 | **2.49x** |
+
+Targeted LSH-only check on the same single-thread sketch matrices:
+
+| Dataset | Old Build+Query (s) | New One-Shot (s) | Speedup | Flags Equal |
+|---------|----------------------|------------------|---------|-------------|
+| PINECONE | 0.155 | 0.106 | **1.47x** | yes |
+| SHUYUEJ | 0.045 | 0.019 | **2.32x** | yes |
 
 ### FastSketch Thread Scaling (BOOKS3)
 - `threads=1` uses a fused chunked hash+sketch fast path (`init.cpp:466`) that bypasses OpenMP entirely and reuses parent buffers. `threads>1` falls through to `sketch_batch_flat_bytes`, which spawns per-thread worker copies and re-partitions work via `omp for schedule(static)`. For BOOKS3's 5.4K very-long documents, the worker-clone overhead and memory-bandwidth contention outweigh parallel gains, so single-thread is fastest.
@@ -58,6 +83,11 @@ FastSketchLSH sketch is **1.1–2.4x faster** than Rensa across all configuratio
 ### Fair Benchmark (recommended)
 
 `bench_fair.py` runs both engines in subprocess isolation. This is required because Rensa's Rayon thread pool initializes once per process and cannot be reconfigured — so each `(dataset, threads)` combination spawns a fresh subprocess with `RAYON_NUM_THREADS` pinned.
+
+Current FastSketch adapter behavior:
+
+- `threads=1`: use `insert_and_query_duplicates(...)` for true LSH one-shot duplicate flagging
+- `threads>1`: use `insert(...)` then `duplicates(...)`
 
 ```bash
 # Full benchmark: PINECONE + SHUYUEJ at threads=1 and threads=8

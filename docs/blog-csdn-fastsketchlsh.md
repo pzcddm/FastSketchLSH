@@ -525,7 +525,7 @@ $$
 ### 8.0 实验设置
 
 下面表格统一按单线程看结果，用来和其他实现做公平对比。即便在这个设置下，FastSketchLSH 也有明显加速。  
-同时 FastSketchLSH 本身支持多线程：`FastSimilaritySketch.sketch_batch(..., num_threads=...)` 和 `LSH(..., num_threads=...)`，在 OpenMP 可用时还能继续提速。
+同时 FastSketchLSH 本身支持多线程：`FastSimilaritySketch.batch(..., num_threads=...)` 和 `LSH(..., num_threads=...)`，在 OpenMP 可用时还能继续提速。
 
 ### 8.1 估计分布/方差（simulation）
 
@@ -594,15 +594,15 @@ from FastSketchLSH import FastSimilaritySketch, estimate_jaccard
 list_a = [f"a-{i}" for i in range(16_000)]
 list_b = [f"a-{i}" for i in range(8_000)] + [f"b-{i}" for i in range(8_000)]
 
-sketcher = FastSimilaritySketch(sketch_size=256)
-sig_a = sketcher.sketch(list_a)
-sig_b = sketcher.sketch(list_b)
+sketcher = FastSimilaritySketch(size=256)
+sig_a = sketcher(list_a)
+sig_b = sketcher(list_b)
 
 estimated = estimate_jaccard(sig_a, sig_b)
 print(f"Estimated Jaccard similarity: {estimated:.4f}")
 ```
 
-### 9.3 LSH：batch build + batch query
+### 9.3 LSH：one-shot duplicate flags + query
 
 ```python
 from __future__ import annotations
@@ -617,17 +617,16 @@ dataset = load_dataset("lucadiliello/bookcorpusopen", split="train[:2048]")
 texts = [row["text"] for row in dataset if row.get("text")]
 token_sets = [tokenize(text) for text in texts]
 
-sketcher = FastSimilaritySketch(sketch_size=128, seed=42)
-sketch_matrix = sketcher.sketch_batch(token_sets)
+sketcher = FastSimilaritySketch(size=128, seed=42)
+sketch_matrix = sketcher.batch(token_sets)
 
 lsh = LSH(num_perm=128, num_bands=16)
-lsh.build_from_batch(sketch_matrix)
+dup_flags = lsh.insert_and_query_duplicates(sketch_matrix).tolist()
 
 doc_idx = 0
-candidates = lsh.query_candidates(sketch_matrix[doc_idx])
+candidates = lsh.query(sketch_matrix[doc_idx])
 print(f"Candidates for {doc_idx}:", candidates)
 
-dup_flags = [1 if len(lsh.query_candidates(row)) > 1 else 0 for row in sketch_matrix]
 print("Duplicate flags:", dup_flags)
 print("Total duplicates detected:", sum(dup_flags))
 ```
@@ -646,7 +645,7 @@ bash exps/end2end/run_all_comparisons.sh
 
 ## 10. 参数建议与常见坑
 
-1. **sketch_size（k）**：常用 `128/256/512`。k 越大越稳，但计算和内存也更高。
+1. **size（也就是 sketch size, k）**：常用 `128/256/512`。k 越大越稳，但计算和内存也更高。
 2. **LSH bands/rows**：满足 `k = b * r`，按目标阈值调 S-curve。
 3. **tokenization 很关键**：分词、停用词、ngram 直接影响 Jaccard 语义。
 4. **LSH 只做候选召回**：如果目标 Jaccard 在 `0.8/0.9` 这类较高区间，LSH 往往已经比较准；但阈值设得更低时，通常还是要做二阶段验证（精确 Jaccard 或其他相似度）。

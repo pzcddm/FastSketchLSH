@@ -1075,6 +1075,98 @@ PYBIND11_MODULE(FastSketchLSH, m) {
        }, py::arg("data"), py::arg("self_start") = 0,
           "Batch query returning duplicate flags as uint8 for self-query batches")
 
+      // ── insert_and_query_duplicates(data) ─────────────────────────────
+      .def("insert_and_query_duplicates", [](LSH& self,
+                                             py::array_t<std::uint64_t, py::array::c_style | py::array::forcecast> arr) {
+           py::buffer_info bi = arr.request();
+           if (bi.ndim != 2) throw py::value_error("Input must be 2D (B,t) uint64 array");
+           const std::size_t B = static_cast<std::size_t>(bi.shape[0]);
+           const std::size_t t = static_cast<std::size_t>(bi.shape[1]);
+           const std::uint64_t* base = static_cast<const std::uint64_t*>(bi.ptr);
+
+           std::vector<std::uint8_t> flags;
+           {
+               py::gil_scoped_release release;
+               self.insert_and_query_duplicate_flags_batch(base, B, t, flags);
+           }
+
+           py::array_t<std::uint8_t> out(static_cast<py::ssize_t>(B));
+           auto out_view = out.mutable_unchecked<1>();
+           for (std::size_t i = 0; i < B; ++i) {
+               out_view(static_cast<py::ssize_t>(i)) = flags[i];
+           }
+           return out;
+       }, py::arg("data"),
+          "Insert a 2D uint64 sketch matrix and return duplicate flags for the inserted rows")
+
+      .def("insert_and_query_duplicates", [](LSH& self, py::list rows) {
+           const std::size_t B = static_cast<std::size_t>(rows.size());
+           const std::size_t t = self.num_perm();
+           std::unique_ptr<const std::uint64_t*[]> ptrs(new const std::uint64_t*[B]);
+           for (std::size_t i = 0; i < B; ++i) {
+               auto arr = py::cast<py::array_t<std::uint64_t, py::array::c_style | py::array::forcecast>>(rows[i]);
+               py::buffer_info bi = arr.request();
+               if (bi.ndim != 1) throw py::value_error("Each array must be 1D");
+               if (static_cast<std::size_t>(bi.size) != t) throw py::value_error("Row length must equal num_perm");
+               ptrs[i] = static_cast<const std::uint64_t*>(bi.ptr);
+           }
+
+           std::vector<std::uint8_t> flags;
+           {
+               py::gil_scoped_release release;
+               self.insert_and_query_duplicate_flags_batch(ptrs.get(), B, t, flags);
+           }
+
+           py::array_t<std::uint8_t> out(static_cast<py::ssize_t>(B));
+           auto out_view = out.mutable_unchecked<1>();
+           for (std::size_t i = 0; i < B; ++i) {
+               out_view(static_cast<py::ssize_t>(i)) = flags[i];
+           }
+           return out;
+       }, py::arg("rows"),
+          "Insert a list of uint64 sketch rows and return duplicate flags for the inserted rows")
+
+      .def("insert_and_query_duplicates", [](LSH& self, py::object py_rows) {
+           PyObject* seq = PySequence_Fast(py_rows.ptr(), "rows must be a sequence");
+           if (!seq) throw py::error_already_set();
+           const Py_ssize_t Bp = PySequence_Fast_GET_SIZE(seq);
+           const std::size_t B = static_cast<std::size_t>(Bp);
+           const std::size_t t = self.num_perm();
+           std::vector<std::uint64_t> buf;
+           buf.resize(B * t);
+           for (Py_ssize_t i = 0; i < Bp; ++i) {
+               PyObject* row_obj = PySequence_Fast_GET_ITEM(seq, i);
+               PyObject* row_seq = PySequence_Fast(row_obj, "Each row must be a sequence");
+               if (!row_seq) { Py_DECREF(seq); throw py::error_already_set(); }
+               const Py_ssize_t n = PySequence_Fast_GET_SIZE(row_seq);
+               if (static_cast<std::size_t>(n) != t) { Py_DECREF(row_seq); Py_DECREF(seq); throw py::value_error("Row length must equal num_perm"); }
+               PyObject** items = PySequence_Fast_ITEMS(row_seq);
+               std::uint64_t* out = buf.data() + static_cast<std::size_t>(i) * t;
+               for (Py_ssize_t j = 0; j < n; ++j) {
+                   unsigned long long v = PyLong_AsUnsignedLongLong(items[j]);
+                   if (v == (unsigned long long)-1 && PyErr_Occurred()) { Py_DECREF(row_seq); Py_DECREF(seq); throw py::value_error("All items must be integers"); }
+                   out[static_cast<std::size_t>(j)] = static_cast<std::uint64_t>(v);
+               }
+               Py_DECREF(row_seq);
+           }
+           Py_DECREF(seq);
+           const std::uint64_t* base = buf.data();
+
+           std::vector<std::uint8_t> flags;
+           {
+               py::gil_scoped_release release;
+               self.insert_and_query_duplicate_flags_batch(base, B, t, flags);
+           }
+
+           py::array_t<std::uint8_t> out(static_cast<py::ssize_t>(B));
+           auto out_view = out.mutable_unchecked<1>();
+           for (std::size_t i = 0; i < B; ++i) {
+               out_view(static_cast<py::ssize_t>(i)) = flags[i];
+           }
+           return out;
+       }, py::arg("rows"),
+          "Insert Python integer rows and return duplicate flags for the inserted rows")
+
       // Read-only properties
       .def_property_readonly("num_perm",  &LSH::num_perm)
       .def_property_readonly("num_bands", &LSH::num_bands)

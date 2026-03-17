@@ -182,6 +182,98 @@ void LSH::build_from_batch(const std::uint64_t* const* rows,
     }
 }
 
+// Insert a batch and return duplicate flags for the inserted rows in one pass.
+// The batch is processed in row order so we can update earlier rows when a
+// later row collides, preserving the same duplicate-flag semantics as the
+// existing build-then-query flow.
+void LSH::insert_and_query_duplicate_flags_batch(const std::uint64_t* base,
+                                                 std::size_t batch,
+                                                 std::size_t t,
+                                                 std::vector<std::uint8_t>& flags_out) {
+    if (t != num_perm_) {
+        throw std::invalid_argument("t must equal num_perm");
+    }
+    flags_out.assign(batch, static_cast<std::uint8_t>(0));
+    if (batch == 0) {
+        return;
+    }
+
+    const std::size_t global_start_id = next_id_;
+    next_id_ += batch;
+    const std::size_t stride_elems = t;
+
+    // Reuse the same map pre-reserve behavior as the regular batch build.
+    reserve(batch);
+
+    for (std::size_t i = 0; i < batch; ++i) {
+        const std::uint64_t* row = base + i * stride_elems;
+        const std::size_t self_id = global_start_id + i;
+        bool is_duplicate = false;
+
+        for (std::size_t b = 0; b < num_bands_; ++b) {
+            BandTable& table = tables_[b];
+            const std::size_t offset = b * band_size_;
+            const std::uint64_t h = band_hash(row + offset, band_size_, band_salts_[b]);
+            Bucket& bucket = table[h];
+
+            for (std::size_t id : bucket) {
+                is_duplicate = true;
+                if (id >= global_start_id && id < self_id) {
+                    flags_out[id - global_start_id] = static_cast<std::uint8_t>(1);
+                }
+            }
+
+            bucket.push_back(self_id);
+        }
+
+        flags_out[i] = static_cast<std::uint8_t>(is_duplicate ? 1 : 0);
+    }
+}
+
+// Pointer-to-row variant of the one-shot insert + duplicate-flag path.
+void LSH::insert_and_query_duplicate_flags_batch(const std::uint64_t* const* rows,
+                                                 std::size_t batch,
+                                                 std::size_t t,
+                                                 std::vector<std::uint8_t>& flags_out) {
+    if (t != num_perm_) {
+        throw std::invalid_argument("t must equal num_perm");
+    }
+    flags_out.assign(batch, static_cast<std::uint8_t>(0));
+    if (batch == 0) {
+        return;
+    }
+
+    const std::size_t global_start_id = next_id_;
+    next_id_ += batch;
+
+    // Reuse the same map pre-reserve behavior as the regular batch build.
+    reserve(batch);
+
+    for (std::size_t i = 0; i < batch; ++i) {
+        const std::uint64_t* row = rows[i];
+        const std::size_t self_id = global_start_id + i;
+        bool is_duplicate = false;
+
+        for (std::size_t b = 0; b < num_bands_; ++b) {
+            BandTable& table = tables_[b];
+            const std::size_t offset = b * band_size_;
+            const std::uint64_t h = band_hash(row + offset, band_size_, band_salts_[b]);
+            Bucket& bucket = table[h];
+
+            for (std::size_t id : bucket) {
+                is_duplicate = true;
+                if (id >= global_start_id && id < self_id) {
+                    flags_out[id - global_start_id] = static_cast<std::uint8_t>(1);
+                }
+            }
+
+            bucket.push_back(self_id);
+        }
+
+        flags_out[i] = static_cast<std::uint8_t>(is_duplicate ? 1 : 0);
+    }
+}
+
 // Query the LSH tables for candidates similar to the given digest (sketch).
 // Returns a deduplicated vector of candidate IDs.
 // Time: O(num_bands_ * band_size_ + output_size)
