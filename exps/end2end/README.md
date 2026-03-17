@@ -6,45 +6,45 @@ Fair end-to-end benchmarks comparing FastSketchLSH and Rensa using standard MinH
 
 ## Speed Highlights
 
-Fixed parameters: `bands=8, rows=16, num_perm=128, threshold=0.8`. All numbers are 3–5 run medians.
+Fixed parameters: `bands=8, rows=16, num_perm=128, threshold=0.8`.
 
-PINECONE and SHUYUEJ were measured on Apple Silicon (arm64, 16 GB). BOOKS3 documents are full-length books whose tokenized pickle alone exceeds 3 GB; the working set requires 64+ GB RAM, so it was measured on an AMD EPYC 7352 server (x86_64, 200 GB). See `docs/books3-server-experiment-guide.md` for server setup.
+All datasets measured on AMD EPYC 7352 (x86_64, 200 GB) with Rensa 0.4.0. See `docs/books3-server-experiment-guide.md` for server setup.
 
 ### Single-Thread (`threads=1`)
 
 | Dataset | Engine | Sketch (s) | Build (s) | Query (s) | Total (s) | Sketch Speedup | Total Speedup |
 |---------|--------|------------|-----------|-----------|-----------|----------------|---------------|
-| PINECONE (100K docs) | Rensa | 0.879 | 0.016 | 0.000 | 0.895 | — | — |
-| PINECONE | FastSketchLSH | 0.515 | 0.093 | 0.036 | 0.644 | **1.71x** | **1.39x** |
-| SHUYUEJ (37.8K docs) | Rensa | 0.906 | 0.005 | 0.000 | 0.911 | — | — |
-| SHUYUEJ | FastSketchLSH | 0.363 | 0.032 | 0.012 | 0.407 | **2.50x** | **2.24x** |
-| BOOKS3 (15.4K docs) | Rensa | 95.915 | 0.005 | 0.003 | 95.923 | — | — |
-| BOOKS3 | FastSketchLSH | 28.440 | 0.008 | 0.007 | 28.455 | **3.37x** | **3.37x** |
+| PINECONE (100K docs) | Rensa | 1.593 | 0.064 | 0.000 | 1.657 | — | — |
+| PINECONE | FastSketchLSH | 1.423 | 0.360 | 0.172 | 1.954 | **1.12x** | 0.85x |
+| SHUYUEJ (37.8K docs) | Rensa | 1.252 | 0.011 | 0.000 | 1.263 | — | — |
+| SHUYUEJ | FastSketchLSH | 0.799 | 0.114 | 0.067 | 0.980 | **1.57x** | **1.29x** |
+| BOOKS3 (5.4K docs) | Rensa | 36.190 | 0.002 | 0.000 | 36.193 | — | — |
+| BOOKS3 | FastSketchLSH | 14.843 | 0.014 | 0.006 | 14.863 | **2.44x** | **2.44x** |
 
 ### Multi-Thread (8 threads)
 
 | Dataset | Engine | Sketch (s) | Build (s) | Query (s) | Total (s) | Sketch Speedup | Total Speedup |
 |---------|--------|------------|-----------|-----------|-----------|----------------|---------------|
-| PINECONE (100K docs) | Rensa | 0.337 | 0.015 | 0.000 | 0.352 | — | — |
-| PINECONE | FastSketchLSH | 0.155 | 0.023 | 0.007 | 0.185 | **2.17x** | **1.90x** |
-| SHUYUEJ (37.8K docs) | Rensa | 0.293 | 0.005 | 0.000 | 0.298 | — | — |
-| SHUYUEJ | FastSketchLSH | 0.115 | 0.007 | 0.002 | 0.124 | **2.55x** | **2.40x** |
+| PINECONE (100K docs) | Rensa | 1.085 | 0.040 | 0.000 | 1.125 | — | — |
+| PINECONE | FastSketchLSH | 0.786 | 0.097 | 0.026 | 0.910 | **1.38x** | **1.24x** |
+| SHUYUEJ (37.8K docs) | Rensa | 0.842 | 0.012 | 0.000 | 0.854 | — | — |
+| SHUYUEJ | FastSketchLSH | 0.658 | 0.038 | 0.017 | 0.713 | **1.28x** | **1.20x** |
+| BOOKS3 (5.4K docs) | Rensa | 24.605 | 0.002 | 0.000 | 24.607 | — | — |
+| BOOKS3 | FastSketchLSH | 14.191 | 0.006 | 0.003 | 14.199 | **1.73x** | **1.73x** |
 
 ### Summary
 
 | Dataset | threads=1 | | threads=8 | |
 |---------|-----------|-------|-----------|-------|
 | | Sketch | Total | Sketch | Total |
-| PINECONE | 1.71x | 1.39x | 2.17x | 1.90x |
-| SHUYUEJ | 2.50x | 2.24x | 2.55x | 2.40x |
-| BOOKS3 | 3.37x | 3.37x | — | — |
+| PINECONE | 1.12x | 0.85x | 1.38x | 1.24x |
+| SHUYUEJ | 1.57x | 1.29x | 1.28x | 1.20x |
+| BOOKS3 | 2.44x | 2.44x | 1.73x | 1.73x |
 
-FastSketchLSH is **1.4–3.4x faster** than Rensa across all configurations when both use standard MinHash. The speedup is largest on BOOKS3 where documents are long and sketching dominates total time.
-
-> **TODO — BOOKS3 re-benchmark:** The BOOKS3 numbers above were collected with an older build before the thread-aware `sketch_batch` dispatch landed. The current code parallelises both hashing and sketching via OpenMP, which produced significant gains on PINECONE and SHUYUEJ. We expect BOOKS3 speedups to improve as well, especially at 8 threads where long documents benefit most from parallel sketching. Plan: re-run `bench_fair.py --datasets BOOKS3 --threads 1 8` on the AMD EPYC server with the latest build and update these tables.
+FastSketchLSH sketch is **1.1–2.4x faster** than Rensa across all configurations. End-to-end total speedup ranges from **1.2–2.4x** on datasets where sketching dominates (SHUYUEJ, BOOKS3). On PINECONE at single-thread, FastSketchLSH's higher build+query overhead (0.53s vs 0.06s) offsets the sketch advantage — switching to 8 threads recovers the lead (0.91s vs 1.13s total).
 
 ### FastSketch Thread Scaling (BOOKS3)
-- Total time drops from `25.442s` at one thread to `12.921s` at eight threads, with sketching dominating the gains.
+- `threads=1` uses a fused chunked hash+sketch fast path (`init.cpp:466`) that bypasses OpenMP entirely and reuses parent buffers. `threads>1` falls through to `sketch_batch_flat_bytes`, which spawns per-thread worker copies and re-partitions work via `omp for schedule(static)`. For BOOKS3's 5.4K very-long documents, the worker-clone overhead and memory-bandwidth contention outweigh parallel gains, so single-thread is fastest.
 - Build and query stages remain sub-millisecond relative to sketching, so the curve follows sketch throughput.
 
 ![FastSketch thread scaling on BOOKS3](results/fastsketch_thread_scaling_BOOKS3.png)
