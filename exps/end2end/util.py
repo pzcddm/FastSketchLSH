@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import pickle
 import random
@@ -7,9 +8,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, List, Optional
 
+import numpy as np
 from datasets import load_dataset  # type: ignore
 
 DEFAULT_HF_ENDPOINT = "https://hf-mirror.com"
+
+try:
+    import xxhash  # type: ignore
+except Exception:
+    xxhash = None
 
 
 def _extract_text(record: dict) -> str:
@@ -41,6 +48,10 @@ class PreprocessResult:
     texts: List[str]
     token_sets: List[List[str]]
     elapsed_seconds: float
+    # Optional pre-hashed CSR payload for FastSketch. This keeps end-to-end
+    # benchmark sketching on the native prehashed API path.
+    prehashed_data: Optional[np.ndarray] = None
+    prehashed_indptr: Optional[np.ndarray] = None
 
 
 class DatasetPreprocessor:
@@ -57,6 +68,7 @@ class DatasetPreprocessor:
         download_mode: str = "reuse_cache_if_exists",
         processed_dir: Optional[Path] = None,
         ngram_size: int = 3,
+        prepare_prehashed_for_fastsketch: bool = False,
     ) -> None:
         self.dataset_name = dataset_name
         self.split = split
@@ -67,6 +79,7 @@ class DatasetPreprocessor:
         self.download_mode = download_mode
         self.processed_dir = processed_dir
         self.ngram_size = max(1, ngram_size)
+        self.prepare_prehashed_for_fastsketch = prepare_prehashed_for_fastsketch
 
     def _prepare_environment(self) -> None:
         if self.use_mirror:
@@ -83,6 +96,67 @@ class DatasetPreprocessor:
         filename = f"{safe_dataset}__{self.split}__ng{self.ngram_size}.pkl"
         return self.processed_dir / filename
 
+    def _prehashed_path(self) -> Optional[Path]:
+        if self.processed_dir is None:
+            return None
+        safe_dataset = self.dataset_name.replace("/", "__")
+        filename = f"{safe_dataset}__{self.split}__ng{self.ngram_size}__xxh64csr.npz"
+        return self.processed_dir / filename
+
+    @staticmethod
+    def _hash_token_u64(token: str) -> np.uint64:
+        token_bytes = token.encode("utf-8")
+        # Prefer xxhash when available (fast C implementation).
+        if xxhash is not None:
+            return np.uint64(xxhash.xxh64_intdigest(token_bytes))
+        # Fallback hash remains deterministic across runs/platforms.
+        digest = hashlib.blake2b(token_bytes, digest_size=8).digest()
+        return np.uint64(int.from_bytes(digest, byteorder="little", signed=False))
+
+    def _build_prehashed_csr(
+        self,
+        token_sets: List[List[str]],
+    ) -> tuple[np.ndarray, np.ndarray]:
+        row_count = len(token_sets)
+        lengths = np.fromiter((len(tokens) for tokens in token_sets), dtype=np.uint64, count=row_count)
+        indptr = np.empty(row_count + 1, dtype=np.uint64)
+        indptr[0] = 0
+        np.cumsum(lengths, out=indptr[1:])
+
+        total_items = int(indptr[-1])
+        data = np.empty(total_items, dtype=np.uint64)
+        cursor = 0
+        for tokens in token_sets:
+            row_len = len(tokens)
+            if row_len == 0:
+                continue
+            row_hashes = [self._hash_token_u64(token) for token in tokens]
+            data[cursor : cursor + row_len] = row_hashes
+            cursor += row_len
+
+        return data, indptr
+
+    def _load_or_prepare_prehashed_csr(
+        self,
+        token_sets: List[List[str]],
+    ) -> tuple[np.ndarray, np.ndarray, float]:
+        import time
+
+        prehashed_path = self._prehashed_path()
+        if prehashed_path is not None and prehashed_path.exists():
+            start = time.perf_counter()
+            with np.load(prehashed_path) as payload:
+                data = np.asarray(payload["data"], dtype=np.uint64)
+                indptr = np.asarray(payload["indptr"], dtype=np.uint64)
+            return data, indptr, time.perf_counter() - start
+
+        start = time.perf_counter()
+        data, indptr = self._build_prehashed_csr(token_sets)
+        elapsed = time.perf_counter() - start
+        if prehashed_path is not None:
+            np.savez(prehashed_path, data=data, indptr=indptr)
+        return data, indptr, elapsed
+
     def load_and_tokenize(self) -> PreprocessResult:
         """Load dataset records, shuffle, and return tokenised documents."""
         import time
@@ -97,10 +171,18 @@ class DatasetPreprocessor:
                 token_sets = pickle.load(fh)
             cache_time = time.perf_counter() - cache_start
             print(f"✓ Loaded {len(token_sets):,} items in {cache_time:.1f}s")
+            prehashed_data = None
+            prehashed_indptr = None
+            prehashed_time = 0.0
+            if self.prepare_prehashed_for_fastsketch:
+                prehashed_data, prehashed_indptr, prehashed_time = self._load_or_prepare_prehashed_csr(token_sets)
+                print(f"✓ Prepared pre-hashed CSR in {prehashed_time:.1f}s")
             return PreprocessResult(
                 texts=[""] * len(token_sets),
                 token_sets=token_sets,
-                elapsed_seconds=cache_time,
+                elapsed_seconds=cache_time + prehashed_time,
+                prehashed_data=prehashed_data,
+                prehashed_indptr=prehashed_indptr,
             )
 
         # Load from HuggingFace
@@ -123,4 +205,17 @@ class DatasetPreprocessor:
                 pickle.dump(token_sets, fh, protocol=pickle.HIGHEST_PROTOCOL)
             print(f"✓ Saved pickle")
 
-        return PreprocessResult(texts=texts, token_sets=token_sets, elapsed_seconds=elapsed)
+        prehashed_data = None
+        prehashed_indptr = None
+        prehashed_time = 0.0
+        if self.prepare_prehashed_for_fastsketch:
+            prehashed_data, prehashed_indptr, prehashed_time = self._load_or_prepare_prehashed_csr(token_sets)
+            print(f"✓ Prepared pre-hashed CSR in {prehashed_time:.1f}s")
+
+        return PreprocessResult(
+            texts=texts,
+            token_sets=token_sets,
+            elapsed_seconds=elapsed + prehashed_time,
+            prehashed_data=prehashed_data,
+            prehashed_indptr=prehashed_indptr,
+        )

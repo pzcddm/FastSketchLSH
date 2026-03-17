@@ -54,10 +54,31 @@ class FastSketchDeduplicator(Deduplicator):
         """
         return [[str(token) for token in tokens] for tokens in token_sets]
 
-    def sketch(self, token_sets: Sequence[Sequence[str]]) -> np.ndarray:
+    def sketch(
+        self,
+        token_sets: Sequence[Sequence[str]] | tuple[np.ndarray, np.ndarray],
+    ) -> np.ndarray:
         self.reset_timings()
         sketch_start = time.perf_counter()
-        sketches = self._sketcher.sketch_batch(token_sets, num_threads=self.sketch_threads)
+        if (
+            isinstance(token_sets, tuple)
+            and len(token_sets) == 2
+            and isinstance(token_sets[0], np.ndarray)
+            and isinstance(token_sets[1], np.ndarray)
+        ):
+            # Pre-hashed fast path: caller provides a CSR matrix of uint64 token hashes.
+            data = np.asarray(token_sets[0], dtype=np.uint64)
+            indptr = np.asarray(token_sets[1], dtype=np.uint64)
+            sketches = self._sketcher.sketch_batch_flat_csr_prehashed(
+                data,
+                indptr,
+                num_threads=self.sketch_threads,
+            )
+        else:
+            # sketch_batch has thread-aware dispatch: single-thread uses a fused
+            # chunked path; multi-thread falls through to the ptrs/lengths path
+            # where sketch_batch_flat_bytes parallelizes both hashing and sketching.
+            sketches = self._sketcher.sketch_batch(token_sets, num_threads=self.sketch_threads)
         sketch_time = time.perf_counter() - sketch_start
         self._last_sketch_threads_label = self._format_threads(self.sketch_threads)
         self.timings["sketch"] = sketch_time
@@ -69,12 +90,20 @@ class FastSketchDeduplicator(Deduplicator):
         self._lsh.build_from_batch(sketches)
         self.timings["build"] = time.perf_counter() - build_start
 
-        query_start = time.perf_counter()
-        flat, indptr = self._lsh.batch_query_csr(sketches)
-        self.timings["query"] = time.perf_counter() - query_start
-        _ = flat
-        B = int(sketches.shape[0])
-        flags = [1 if int(indptr[i + 1] - indptr[i]) > 1 else 0 for i in range(B)]
+        # Prefer the duplicate-flag fast path when available. It avoids
+        # materializing full candidate lists and mirrors rensa's one-shot style.
+        if hasattr(self._lsh, "batch_query_duplicate_flags"):
+            query_start = time.perf_counter()
+            flag_bytes = self._lsh.batch_query_duplicate_flags(sketches, self_id_start=0)
+            self.timings["query"] = time.perf_counter() - query_start
+            flags = np.asarray(flag_bytes, dtype=np.uint8).tolist()
+        else:
+            query_start = time.perf_counter()
+            flat, indptr = self._lsh.batch_query_csr(sketches)
+            self.timings["query"] = time.perf_counter() - query_start
+            _ = flat
+            B = int(sketches.shape[0])
+            flags = [1 if int(indptr[i + 1] - indptr[i]) > 1 else 0 for i in range(B)]
 
         # The single-row and Python-list batch query paths remain available for
         # experimentation, but they are commented out because the CSR routine above

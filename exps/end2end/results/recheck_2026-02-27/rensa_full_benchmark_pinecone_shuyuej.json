@@ -1,0 +1,764 @@
+{
+  "config": {
+    "cache_dir": "/private/tmp/rensa_latest/.bench/local/cache/full_benchmark",
+    "dataset_max_rows": {},
+    "datasets": [
+      "pinecone",
+      "shuyuej"
+    ],
+    "datasketch_threading_note": "Datasketch does not expose explicit thread count controls; lane env vars are pinned for process symmetry.",
+    "max_rows": null,
+    "ngram_size": 3,
+    "num_bands": 8,
+    "num_perm": 128,
+    "rensa_env": {},
+    "repetitions": 1,
+    "rows_per_band": 16,
+    "seed": 12345,
+    "threads": [
+      1,
+      8
+    ],
+    "threshold": 0.8,
+    "warmup_runs": 0
+  },
+  "metadata": {
+    "library_versions": {
+      "datasets": "4.0.0",
+      "datasketch": "1.6.5",
+      "fastsketch": "0.3.2",
+      "rensa": "0.4.0"
+    },
+    "platform": "macOS-26.3-arm64-arm-64bit",
+    "python_version": "3.12.6",
+    "timestamp_utc": "2026-02-27T05:45:49.569437+00:00"
+  },
+  "results": [
+    {
+      "dataset": {
+        "default_max_rows": 100000,
+        "hf_dataset": "pinecone/core-2020-05-10-deduplication",
+        "key": "pinecone",
+        "revision": null,
+        "split": "train",
+        "streaming": false,
+        "text_columns": [
+          "processed_title",
+          "processed_abstract"
+        ]
+      },
+      "effective_max_rows": 100000,
+      "rows": 100000,
+      "runs": [
+        {
+          "accuracy": {
+            "jaccard": {
+              "datasketch_vs_fastsketch": 0.9672600171944808,
+              "datasketch_vs_rensa": 0.962033569149674,
+              "rensa_vs_fastsketch": 0.9631124239020399
+            },
+            "mismatch_vs_datasketch": {
+              "fastsketch": {
+                "count": 2323,
+                "false_negative": 1221,
+                "false_positive": 1102,
+                "rate": 0.02323
+              },
+              "rensa": {
+                "count": 2737,
+                "false_negative": 2358,
+                "false_positive": 379,
+                "rate": 0.02737
+              }
+            },
+            "mismatch_vs_fastsketch": {
+              "datasketch": {
+                "count": 2323,
+                "false_negative": 1102,
+                "false_positive": 1221,
+                "rate": 0.02323
+              },
+              "rensa": {
+                "count": 2660,
+                "false_negative": 2260,
+                "false_positive": 400,
+                "rate": 0.0266
+              }
+            }
+          },
+          "engines": {
+            "datasketch": {
+              "avg_candidates_per_row": 1.40446,
+              "build": 1.3632920419986476,
+              "query": 0.5070043750019977,
+              "rows_remaining": 69732,
+              "rows_removed": 30268,
+              "sketch": 5.145600999996532,
+              "total": 7.015897416997177,
+              "total_candidates": 140446
+            },
+            "fastsketch": {
+              "avg_candidates_per_row": 1.40354,
+              "build": 0.0972629159950884,
+              "query": 0.11289733299781801,
+              "rows_remaining": 69851,
+              "rows_removed": 30149,
+              "sketch": 0.2974612079997314,
+              "total": 0.5076214569926378,
+              "total_candidates": 140354
+            },
+            "rensa": {
+              "avg_candidates_per_row": null,
+              "build": 0.015520415996434167,
+              "query": 0.0,
+              "rows_remaining": 71711,
+              "rows_removed": 28289,
+              "sketch": 0.08269620800274424,
+              "total": 0.09821662399917841,
+              "total_candidates": null
+            }
+          },
+          "order": [
+            "datasketch",
+            "fastsketch",
+            "rensa"
+          ],
+          "rows": 100000,
+          "thread_env_assertions": {
+            "MKL_NUM_THREADS": true,
+            "NUMEXPR_NUM_THREADS": true,
+            "OMP_NUM_THREADS": true,
+            "OPENBLAS_NUM_THREADS": true,
+            "RAYON_NUM_THREADS": true,
+            "VECLIB_MAXIMUM_THREADS": true
+          },
+          "threads": 1,
+          "token_cache_sha256": "80820c520ad9d5b007171c33fff6dcf0f8d073267a68834db5f778124e19771f"
+        }
+      ],
+      "summary": {
+        "accuracy": {
+          "median_jaccard": {
+            "datasketch_vs_fastsketch": 0.9672600171944808,
+            "datasketch_vs_rensa": 0.962033569149674,
+            "rensa_vs_fastsketch": 0.9631124239020399
+          },
+          "mismatch_vs_datasketch": {
+            "fastsketch": {
+              "median_count": 2323,
+              "median_false_negative": 1221,
+              "median_false_positive": 1102,
+              "median_rate": 0.02323
+            },
+            "rensa": {
+              "median_count": 2737,
+              "median_false_negative": 2358,
+              "median_false_positive": 379,
+              "median_rate": 0.02737
+            }
+          },
+          "mismatch_vs_fastsketch": {
+            "datasketch": {
+              "median_count": 2323,
+              "median_false_negative": 1102,
+              "median_false_positive": 1221,
+              "median_rate": 0.02323
+            },
+            "rensa": {
+              "median_count": 2660,
+              "median_false_negative": 2260,
+              "median_false_positive": 400,
+              "median_rate": 0.0266
+            }
+          }
+        },
+        "engine_medians": {
+          "datasketch": {
+            "median_avg_candidates_per_row": 1.40446,
+            "median_build": 1.3632920419986476,
+            "median_query": 0.5070043750019977,
+            "median_rows_remaining": 69732,
+            "median_rows_removed": 30268,
+            "median_sketch": 5.145600999996532,
+            "median_total": 7.015897416997177
+          },
+          "fastsketch": {
+            "median_avg_candidates_per_row": 1.40354,
+            "median_build": 0.0972629159950884,
+            "median_query": 0.11289733299781801,
+            "median_rows_remaining": 69851,
+            "median_rows_removed": 30149,
+            "median_sketch": 0.2974612079997314,
+            "median_total": 0.5076214569926378
+          },
+          "rensa": {
+            "median_avg_candidates_per_row": null,
+            "median_build": 0.015520415996434167,
+            "median_query": 0.0,
+            "median_rows_remaining": 71711,
+            "median_rows_removed": 28289,
+            "median_sketch": 0.08269620800274424,
+            "median_total": 0.09821662399917841
+          }
+        },
+        "fairness": {
+          "thread_env_assertions_all_true": true,
+          "token_cache_hash_consistent": true,
+          "token_cache_sha256": "80820c520ad9d5b007171c33fff6dcf0f8d073267a68834db5f778124e19771f"
+        },
+        "speedup_vs_datasketch": {
+          "datasketch": 1.0,
+          "fastsketch": 13.821120680284661,
+          "rensa": 71.43289120847675
+        }
+      },
+      "threads": 1,
+      "token_cache": "/private/tmp/rensa_latest/.bench/local/cache/full_benchmark/pinecone__pinecone_core_2020_05_10_deduplication__train__processed_title__processed_abstract__ng3__stream0__rev_none__rows_100000.pkl",
+      "token_cache_sha256": "80820c520ad9d5b007171c33fff6dcf0f8d073267a68834db5f778124e19771f"
+    },
+    {
+      "dataset": {
+        "default_max_rows": 100000,
+        "hf_dataset": "pinecone/core-2020-05-10-deduplication",
+        "key": "pinecone",
+        "revision": null,
+        "split": "train",
+        "streaming": false,
+        "text_columns": [
+          "processed_title",
+          "processed_abstract"
+        ]
+      },
+      "effective_max_rows": 100000,
+      "rows": 100000,
+      "runs": [
+        {
+          "accuracy": {
+            "jaccard": {
+              "datasketch_vs_fastsketch": 0.9672600171944808,
+              "datasketch_vs_rensa": 0.962033569149674,
+              "rensa_vs_fastsketch": 0.9631124239020399
+            },
+            "mismatch_vs_datasketch": {
+              "fastsketch": {
+                "count": 2323,
+                "false_negative": 1221,
+                "false_positive": 1102,
+                "rate": 0.02323
+              },
+              "rensa": {
+                "count": 2737,
+                "false_negative": 2358,
+                "false_positive": 379,
+                "rate": 0.02737
+              }
+            },
+            "mismatch_vs_fastsketch": {
+              "datasketch": {
+                "count": 2323,
+                "false_negative": 1102,
+                "false_positive": 1221,
+                "rate": 0.02323
+              },
+              "rensa": {
+                "count": 2660,
+                "false_negative": 2260,
+                "false_positive": 400,
+                "rate": 0.0266
+              }
+            }
+          },
+          "engines": {
+            "datasketch": {
+              "avg_candidates_per_row": 1.40446,
+              "build": 1.3917918340011965,
+              "query": 0.5383644579997053,
+              "rows_remaining": 69732,
+              "rows_removed": 30268,
+              "sketch": 5.21729050000431,
+              "total": 7.147446792005212,
+              "total_candidates": 140446
+            },
+            "fastsketch": {
+              "avg_candidates_per_row": 1.40354,
+              "build": 0.02278025000123307,
+              "query": 0.039438833999156486,
+              "rows_remaining": 69851,
+              "rows_removed": 30149,
+              "sketch": 0.08621616599702975,
+              "total": 0.1484352499974193,
+              "total_candidates": 140354
+            },
+            "rensa": {
+              "avg_candidates_per_row": null,
+              "build": 0.01241633300378453,
+              "query": 0.0,
+              "rows_remaining": 71711,
+              "rows_removed": 28289,
+              "sketch": 0.034571250005683396,
+              "total": 0.046987583009467926,
+              "total_candidates": null
+            }
+          },
+          "order": [
+            "fastsketch",
+            "datasketch",
+            "rensa"
+          ],
+          "rows": 100000,
+          "thread_env_assertions": {
+            "MKL_NUM_THREADS": true,
+            "NUMEXPR_NUM_THREADS": true,
+            "OMP_NUM_THREADS": true,
+            "OPENBLAS_NUM_THREADS": true,
+            "RAYON_NUM_THREADS": true,
+            "VECLIB_MAXIMUM_THREADS": true
+          },
+          "threads": 8,
+          "token_cache_sha256": "80820c520ad9d5b007171c33fff6dcf0f8d073267a68834db5f778124e19771f"
+        }
+      ],
+      "summary": {
+        "accuracy": {
+          "median_jaccard": {
+            "datasketch_vs_fastsketch": 0.9672600171944808,
+            "datasketch_vs_rensa": 0.962033569149674,
+            "rensa_vs_fastsketch": 0.9631124239020399
+          },
+          "mismatch_vs_datasketch": {
+            "fastsketch": {
+              "median_count": 2323,
+              "median_false_negative": 1221,
+              "median_false_positive": 1102,
+              "median_rate": 0.02323
+            },
+            "rensa": {
+              "median_count": 2737,
+              "median_false_negative": 2358,
+              "median_false_positive": 379,
+              "median_rate": 0.02737
+            }
+          },
+          "mismatch_vs_fastsketch": {
+            "datasketch": {
+              "median_count": 2323,
+              "median_false_negative": 1102,
+              "median_false_positive": 1221,
+              "median_rate": 0.02323
+            },
+            "rensa": {
+              "median_count": 2660,
+              "median_false_negative": 2260,
+              "median_false_positive": 400,
+              "median_rate": 0.0266
+            }
+          }
+        },
+        "engine_medians": {
+          "datasketch": {
+            "median_avg_candidates_per_row": 1.40446,
+            "median_build": 1.3917918340011965,
+            "median_query": 0.5383644579997053,
+            "median_rows_remaining": 69732,
+            "median_rows_removed": 30268,
+            "median_sketch": 5.21729050000431,
+            "median_total": 7.147446792005212
+          },
+          "fastsketch": {
+            "median_avg_candidates_per_row": 1.40354,
+            "median_build": 0.02278025000123307,
+            "median_query": 0.039438833999156486,
+            "median_rows_remaining": 69851,
+            "median_rows_removed": 30149,
+            "median_sketch": 0.08621616599702975,
+            "median_total": 0.1484352499974193
+          },
+          "rensa": {
+            "median_avg_candidates_per_row": null,
+            "median_build": 0.01241633300378453,
+            "median_query": 0.0,
+            "median_rows_remaining": 71711,
+            "median_rows_removed": 28289,
+            "median_sketch": 0.034571250005683396,
+            "median_total": 0.046987583009467926
+          }
+        },
+        "fairness": {
+          "thread_env_assertions_all_true": true,
+          "token_cache_hash_consistent": true,
+          "token_cache_sha256": "80820c520ad9d5b007171c33fff6dcf0f8d073267a68834db5f778124e19771f"
+        },
+        "speedup_vs_datasketch": {
+          "datasketch": 1.0,
+          "fastsketch": 48.15195037654114,
+          "rensa": 152.11352306767967
+        }
+      },
+      "threads": 8,
+      "token_cache": "/private/tmp/rensa_latest/.bench/local/cache/full_benchmark/pinecone__pinecone_core_2020_05_10_deduplication__train__processed_title__processed_abstract__ng3__stream0__rev_none__rows_100000.pkl",
+      "token_cache_sha256": "80820c520ad9d5b007171c33fff6dcf0f8d073267a68834db5f778124e19771f"
+    },
+    {
+      "dataset": {
+        "default_max_rows": 37777,
+        "hf_dataset": "shuyuej/pretraining-dataset",
+        "key": "shuyuej",
+        "revision": null,
+        "split": "train",
+        "streaming": true,
+        "text_columns": [
+          "text"
+        ]
+      },
+      "effective_max_rows": 37777,
+      "rows": 37777,
+      "runs": [
+        {
+          "accuracy": {
+            "jaccard": {
+              "datasketch_vs_fastsketch": 0.997204152249135,
+              "datasketch_vs_rensa": 0.9973454997926172,
+              "rensa_vs_fastsketch": 0.9976496612747131
+            },
+            "mismatch_vs_datasketch": {
+              "fastsketch": {
+                "count": 101,
+                "false_negative": 56,
+                "false_positive": 45,
+                "rate": 0.002673584456150568
+              },
+              "rensa": {
+                "count": 96,
+                "false_negative": 96,
+                "false_positive": 0,
+                "rate": 0.0025412287900045
+              }
+            },
+            "mismatch_vs_fastsketch": {
+              "datasketch": {
+                "count": 101,
+                "false_negative": 45,
+                "false_positive": 56,
+                "rate": 0.002673584456150568
+              },
+              "rensa": {
+                "count": 85,
+                "false_negative": 85,
+                "false_positive": 0,
+                "rate": 0.002250046324483151
+              }
+            }
+          },
+          "engines": {
+            "datasketch": {
+              "avg_candidates_per_row": 1.051089287132382,
+              "build": 0.975293541996507,
+              "query": 0.18234195900004124,
+              "rows_remaining": 36069,
+              "rows_removed": 1708,
+              "sketch": 17.391634083003737,
+              "total": 18.549269584000285,
+              "total_candidates": 39707
+            },
+            "fastsketch": {
+              "avg_candidates_per_row": 1.050930460333007,
+              "build": 0.032648250002239365,
+              "query": 0.03474654199817451,
+              "rows_remaining": 36080,
+              "rows_removed": 1697,
+              "sketch": 0.47245462499995483,
+              "total": 0.5398494170003687,
+              "total_candidates": 39701
+            },
+            "rensa": {
+              "avg_candidates_per_row": null,
+              "build": 0.004814915999304503,
+              "query": 0.0,
+              "rows_remaining": 36165,
+              "rows_removed": 1612,
+              "sketch": 0.059783208002045285,
+              "total": 0.06459812400134979,
+              "total_candidates": null
+            }
+          },
+          "order": [
+            "fastsketch",
+            "rensa",
+            "datasketch"
+          ],
+          "rows": 37777,
+          "thread_env_assertions": {
+            "MKL_NUM_THREADS": true,
+            "NUMEXPR_NUM_THREADS": true,
+            "OMP_NUM_THREADS": true,
+            "OPENBLAS_NUM_THREADS": true,
+            "RAYON_NUM_THREADS": true,
+            "VECLIB_MAXIMUM_THREADS": true
+          },
+          "threads": 1,
+          "token_cache_sha256": "4315f02436974cabb4bd1f4f7c3509b1cfca4a5ffd65a012a000b36e94e3afaf"
+        }
+      ],
+      "summary": {
+        "accuracy": {
+          "median_jaccard": {
+            "datasketch_vs_fastsketch": 0.997204152249135,
+            "datasketch_vs_rensa": 0.9973454997926172,
+            "rensa_vs_fastsketch": 0.9976496612747131
+          },
+          "mismatch_vs_datasketch": {
+            "fastsketch": {
+              "median_count": 101,
+              "median_false_negative": 56,
+              "median_false_positive": 45,
+              "median_rate": 0.002673584456150568
+            },
+            "rensa": {
+              "median_count": 96,
+              "median_false_negative": 96,
+              "median_false_positive": 0,
+              "median_rate": 0.0025412287900045
+            }
+          },
+          "mismatch_vs_fastsketch": {
+            "datasketch": {
+              "median_count": 101,
+              "median_false_negative": 45,
+              "median_false_positive": 56,
+              "median_rate": 0.002673584456150568
+            },
+            "rensa": {
+              "median_count": 85,
+              "median_false_negative": 85,
+              "median_false_positive": 0,
+              "median_rate": 0.002250046324483151
+            }
+          }
+        },
+        "engine_medians": {
+          "datasketch": {
+            "median_avg_candidates_per_row": 1.051089287132382,
+            "median_build": 0.975293541996507,
+            "median_query": 0.18234195900004124,
+            "median_rows_remaining": 36069,
+            "median_rows_removed": 1708,
+            "median_sketch": 17.391634083003737,
+            "median_total": 18.549269584000285
+          },
+          "fastsketch": {
+            "median_avg_candidates_per_row": 1.050930460333007,
+            "median_build": 0.032648250002239365,
+            "median_query": 0.03474654199817451,
+            "median_rows_remaining": 36080,
+            "median_rows_removed": 1697,
+            "median_sketch": 0.47245462499995483,
+            "median_total": 0.5398494170003687
+          },
+          "rensa": {
+            "median_avg_candidates_per_row": null,
+            "median_build": 0.004814915999304503,
+            "median_query": 0.0,
+            "median_rows_remaining": 36165,
+            "median_rows_removed": 1612,
+            "median_sketch": 0.059783208002045285,
+            "median_total": 0.06459812400134979
+          }
+        },
+        "fairness": {
+          "thread_env_assertions_all_true": true,
+          "token_cache_hash_consistent": true,
+          "token_cache_sha256": "4315f02436974cabb4bd1f4f7c3509b1cfca4a5ffd65a012a000b36e94e3afaf"
+        },
+        "speedup_vs_datasketch": {
+          "datasketch": 1.0,
+          "fastsketch": 34.36008079265485,
+          "rensa": 287.14873490153826
+        }
+      },
+      "threads": 1,
+      "token_cache": "/private/tmp/rensa_latest/.bench/local/cache/full_benchmark/shuyuej__shuyuej_pretraining_dataset__train__text__ng3__stream1__rev_none__rows_37777.pkl",
+      "token_cache_sha256": "4315f02436974cabb4bd1f4f7c3509b1cfca4a5ffd65a012a000b36e94e3afaf"
+    },
+    {
+      "dataset": {
+        "default_max_rows": 37777,
+        "hf_dataset": "shuyuej/pretraining-dataset",
+        "key": "shuyuej",
+        "revision": null,
+        "split": "train",
+        "streaming": true,
+        "text_columns": [
+          "text"
+        ]
+      },
+      "effective_max_rows": 37777,
+      "rows": 37777,
+      "runs": [
+        {
+          "accuracy": {
+            "jaccard": {
+              "datasketch_vs_fastsketch": 0.997204152249135,
+              "datasketch_vs_rensa": 0.9973454997926172,
+              "rensa_vs_fastsketch": 0.9976496612747131
+            },
+            "mismatch_vs_datasketch": {
+              "fastsketch": {
+                "count": 101,
+                "false_negative": 56,
+                "false_positive": 45,
+                "rate": 0.002673584456150568
+              },
+              "rensa": {
+                "count": 96,
+                "false_negative": 96,
+                "false_positive": 0,
+                "rate": 0.0025412287900045
+              }
+            },
+            "mismatch_vs_fastsketch": {
+              "datasketch": {
+                "count": 101,
+                "false_negative": 45,
+                "false_positive": 56,
+                "rate": 0.002673584456150568
+              },
+              "rensa": {
+                "count": 85,
+                "false_negative": 85,
+                "false_positive": 0,
+                "rate": 0.002250046324483151
+              }
+            }
+          },
+          "engines": {
+            "datasketch": {
+              "avg_candidates_per_row": 1.051089287132382,
+              "build": 0.9727875829994446,
+              "query": 0.1851266250014305,
+              "rows_remaining": 36069,
+              "rows_removed": 1708,
+              "sketch": 17.402855749998707,
+              "total": 18.560769957999582,
+              "total_candidates": 39707
+            },
+            "fastsketch": {
+              "avg_candidates_per_row": 1.050930460333007,
+              "build": 0.007956624998769257,
+              "query": 0.011343208003381733,
+              "rows_remaining": 36080,
+              "rows_removed": 1697,
+              "sketch": 0.1490259589991183,
+              "total": 0.1683257920012693,
+              "total_candidates": 39701
+            },
+            "rensa": {
+              "avg_candidates_per_row": null,
+              "build": 0.0024390420003328472,
+              "query": 0.0,
+              "rows_remaining": 36165,
+              "rows_removed": 1612,
+              "sketch": 0.02803904200118268,
+              "total": 0.030478084001515526,
+              "total_candidates": null
+            }
+          },
+          "order": [
+            "fastsketch",
+            "rensa",
+            "datasketch"
+          ],
+          "rows": 37777,
+          "thread_env_assertions": {
+            "MKL_NUM_THREADS": true,
+            "NUMEXPR_NUM_THREADS": true,
+            "OMP_NUM_THREADS": true,
+            "OPENBLAS_NUM_THREADS": true,
+            "RAYON_NUM_THREADS": true,
+            "VECLIB_MAXIMUM_THREADS": true
+          },
+          "threads": 8,
+          "token_cache_sha256": "4315f02436974cabb4bd1f4f7c3509b1cfca4a5ffd65a012a000b36e94e3afaf"
+        }
+      ],
+      "summary": {
+        "accuracy": {
+          "median_jaccard": {
+            "datasketch_vs_fastsketch": 0.997204152249135,
+            "datasketch_vs_rensa": 0.9973454997926172,
+            "rensa_vs_fastsketch": 0.9976496612747131
+          },
+          "mismatch_vs_datasketch": {
+            "fastsketch": {
+              "median_count": 101,
+              "median_false_negative": 56,
+              "median_false_positive": 45,
+              "median_rate": 0.002673584456150568
+            },
+            "rensa": {
+              "median_count": 96,
+              "median_false_negative": 96,
+              "median_false_positive": 0,
+              "median_rate": 0.0025412287900045
+            }
+          },
+          "mismatch_vs_fastsketch": {
+            "datasketch": {
+              "median_count": 101,
+              "median_false_negative": 45,
+              "median_false_positive": 56,
+              "median_rate": 0.002673584456150568
+            },
+            "rensa": {
+              "median_count": 85,
+              "median_false_negative": 85,
+              "median_false_positive": 0,
+              "median_rate": 0.002250046324483151
+            }
+          }
+        },
+        "engine_medians": {
+          "datasketch": {
+            "median_avg_candidates_per_row": 1.051089287132382,
+            "median_build": 0.9727875829994446,
+            "median_query": 0.1851266250014305,
+            "median_rows_remaining": 36069,
+            "median_rows_removed": 1708,
+            "median_sketch": 17.402855749998707,
+            "median_total": 18.560769957999582
+          },
+          "fastsketch": {
+            "median_avg_candidates_per_row": 1.050930460333007,
+            "median_build": 0.007956624998769257,
+            "median_query": 0.011343208003381733,
+            "median_rows_remaining": 36080,
+            "median_rows_removed": 1697,
+            "median_sketch": 0.1490259589991183,
+            "median_total": 0.1683257920012693
+          },
+          "rensa": {
+            "median_avg_candidates_per_row": null,
+            "median_build": 0.0024390420003328472,
+            "median_query": 0.0,
+            "median_rows_remaining": 36165,
+            "median_rows_removed": 1612,
+            "median_sketch": 0.02803904200118268,
+            "median_total": 0.030478084001515526
+          }
+        },
+        "fairness": {
+          "thread_env_assertions_all_true": true,
+          "token_cache_hash_consistent": true,
+          "token_cache_sha256": "4315f02436974cabb4bd1f4f7c3509b1cfca4a5ffd65a012a000b36e94e3afaf"
+        },
+        "speedup_vs_datasketch": {
+          "datasketch": 1.0,
+          "fastsketch": 110.26693970856006,
+          "rensa": 608.9874270664995
+        }
+      },
+      "threads": 8,
+      "token_cache": "/private/tmp/rensa_latest/.bench/local/cache/full_benchmark/shuyuej__shuyuej_pretraining_dataset__train__text__ng3__stream1__rev_none__rows_37777.pkl",
+      "token_cache_sha256": "4315f02436974cabb4bd1f4f7c3509b1cfca4a5ffd65a012a000b36e94e3afaf"
+    }
+  ]
+}

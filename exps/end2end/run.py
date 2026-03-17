@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Optional
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -120,6 +121,14 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_HF_ENDPOINT,
         help="Custom HuggingFace endpoint (implies --use-hf-mirror when different from default).",
     )
+    parser.add_argument(
+        "--use-prehashed-csr",
+        action="store_true",
+        help=(
+            "[fastsketch] Use cached/prepared pre-hashed CSR input for sketching. "
+            "Disabled by default so end-to-end comparisons with other engines keep preprocessing fair."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -145,6 +154,7 @@ def create_deduplicator(args: argparse.Namespace) -> Deduplicator:
             rows=args.rows,
             threshold=args.threshold,
             seed=42,
+            num_threads=args.sketch_threads,
         )
     raise SystemExit(f"Unsupported engine: {args.engine}")
 
@@ -178,13 +188,23 @@ def main() -> None:
         use_mirror=use_mirror,
         hf_endpoint=hf_endpoint,
         processed_dir=processed_dir,
+        prepare_prehashed_for_fastsketch=(args.engine == "fastsketch" and args.use_prehashed_csr),
     )
     preprocess_result = preprocessor.load_and_tokenize()
     print(
         f"Loaded {len(preprocess_result.texts)} records "
         f"in {preprocess_result.elapsed_seconds:.3f}s"
     )
-    sketches = deduper.sketch(preprocess_result.token_sets)
+
+    # Use the pre-hashed CSR fast path only when the caller explicitly opts in.
+    sketch_input = preprocess_result.token_sets
+    if (
+        args.engine == "fastsketch"
+        and preprocess_result.prehashed_data is not None
+        and preprocess_result.prehashed_indptr is not None
+    ):
+        sketch_input = (preprocess_result.prehashed_data, preprocess_result.prehashed_indptr)
+    sketches = deduper.sketch(sketch_input)
 
     duplicate_flags = deduper.deduplicate(sketches)
 
