@@ -1,5 +1,5 @@
 /*
-  FastSketchLSH Python↔C++ boundary – consolidated API (v1.0.0)
+  FastSketchLSH Python↔C++ boundary – consolidated API (v1.0.1)
 
   Public surface (9 methods):
     FastSimilaritySketch(size=128, seed=42)
@@ -82,7 +82,7 @@ PYBIND11_MODULE(FastSketchLSH, m) {
         return;
     }
 
-    m.attr("__version__") = "1.0.0";
+    m.attr("__version__") = "1.0.1";
     // Expose OpenMP max threads for diagnostics
     m.def("omp_max_threads", []() {
 #ifdef _OPENMP

@@ -252,7 +252,7 @@ for _candidate in [_here / "README.md", _here.parent / "README.md"]:
 
 setup(
     name='FastSketchLSH',
-    version='1.0.0',
+    version='1.0.1',
     description='High-performance FastSketch with SIMD acceleration to deduplicate large-scale data',
     long_description=long_description,
     long_description_content_type='text/markdown',

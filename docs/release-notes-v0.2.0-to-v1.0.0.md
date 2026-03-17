@@ -3,6 +3,11 @@
 This file is the single retained record of the changes made between `v0.2.0` and `v1.0.0`.
 It replaces the older optimization worklog documents.
 
+## Patch release `v1.0.1`
+
+`v1.0.1` keeps the `v1.0.0` public API intact.
+This patch release bumps the package version and adds pytest collection isolation so default `pytest` runs do not import script-style files under `test/` that can preload an older installed extension module.
+
 ## Why `v1.0.0`
 
 `v1.0.0` keeps the native FastSketch kernels and LSH implementation direction from `v0.2.0`,

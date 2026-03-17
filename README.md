@@ -10,6 +10,9 @@ FastSketchLSH delivers a Python-first package that wraps a high-performance C++/
 - At the sketch level, FastSimilaritySketch stays **200×–990× faster** than `datasketch` MinHash while matching its accuracy on the included microbenchmarks.
 - Ground-truth comparisons confirm FastSketchLSH remains competitive on deduplication quality.
 
+Current package version: `1.0.1`.
+This patch release keeps the `v1.0.0` API surface unchanged and adds pytest collection isolation so default test runs stay on the local extension under active development.
+
 ## From v0.2.0 to v1.0.0
 
 v1.0.0 keeps the same native kernels but simplifies the public Python API and adds a true LSH one-shot duplicate path. The main user-visible changes are:
