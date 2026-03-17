@@ -16,3 +16,5 @@ run_bookcorpusopen.sh
 .DS_Store
 **/.DS_Store
 CLAUDE.md
+# Keep the local CSDN draft out of the repo while preserving the file on disk.
+docs/blog-csdn-fastsketchlsh.md
